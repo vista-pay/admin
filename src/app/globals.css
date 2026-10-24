@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Vista Brand */
+  --color-vista-blue: #012a9d;
+  --color-vista-blue-dark: #011e7a;
+  --color-vista-blue-light: #0a3fc4;
+  --color-vista-navy: #0f172a;
+  --color-vista-navy-light: #1e293b;
+  --color-vista-slate: #334155;
+  --color-vista-muted: #64748b;
+  --color-vista-subtle: #94a3b8;
+  --color-vista-surface: #f1f5f9;
+  --color-vista-border: #e2e8f0;
+  --color-vista-success: #10b981;
+  --color-vista-warning: #f59e0b;
+  --color-vista-error: #ef4444;
+  --color-vista-info: #3b82f6;
+
+  /* Semantic */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-primary: #012a9d;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #0f172a;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #012a9d;
+
+  /* Fonts */
+  --font-sans: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  background: #f8fafc;
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button, select { cursor: pointer; }
+
+/*
+ * Normalise native selects that do not already render their own chevron.
+ * Browser-native arrows sit at different heights across Chrome/Safari and
+ * become cramped when Tailwind's horizontal padding is used. This keeps one
+ * 16px icon vertically centred with a consistent right-side click area.
+ */
+select:not(.appearance-none) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%2364758B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem 1rem;
+  padding-right: 2.5rem;
+}
+
+select:disabled {
+  cursor: not-allowed;
+}
+
+@media (max-width: 639px) {
+  table { min-width: 720px; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
