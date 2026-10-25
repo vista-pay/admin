@@ -1,4 +1,12 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rendi Admin
+
+The admin console proxies browser API requests through `/api/backend` so its
+HttpOnly authentication cookies remain same-origin with the console and are
+visible to the route-protection middleware.
+
+Configure the upstream API URL with the server-only `API_BASE` environment
+variable (for example, `https://api.example.com/api/v1`). The legacy
+`NEXT_PUBLIC_API_BASE` variable remains supported as a fallback.
 
 ## Getting Started
 

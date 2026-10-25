@@ -1,5 +1,13 @@
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:9100/api/v1";
+/**
+ * Keep admin authentication same-origin.
+ *
+ * The upstream API sets the admin credentials in HttpOnly cookies. Calling an
+ * absolute API URL from the browser makes those cookies belong to the API
+ * host, so the admin host (including its middleware) cannot see the session
+ * marker. The server-side proxy owns the upstream URL and relays the cookies
+ * onto the admin host instead.
+ */
+export const API_BASE = "/api/backend";
 
 export const APP_NAME = "Rendi";
 export const APP_TAGLINE = "Control Center";
