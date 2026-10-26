@@ -260,6 +260,12 @@ export const adminApi = {
       return { data: found };
     }
   },
+  requeryTransaction: (id: string) =>
+    apiFetch<unknown>(`/admin/transactions/${id}/requery`, { method: "POST", body: "{}" }),
+  requestTransactionReversal: (id: string, reason: string) =>
+    apiFetch<unknown>(`/admin/transactions/${id}/reversal-requests`, { method: "POST", body: JSON.stringify({ reason }) }),
+  decideTransactionReversal: (id: string, requestId: string, approve: boolean, reason: string) =>
+    apiFetch<unknown>(`/admin/transactions/${id}/reversal-requests/${requestId}`, { method: "PATCH", body: JSON.stringify({ approve, reason }) }),
   campaigns: () => apiFetch<unknown>("/admin/campaigns"),
   promotions: () => apiFetch<unknown>("/admin/promotions"),
   referrals: () => apiFetch<unknown>("/admin/referrals"),

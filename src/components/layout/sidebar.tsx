@@ -21,6 +21,7 @@ const NAV: NavGroup[] = [
   { label: "Users", items: [
     { label: "Users", href: "/users", icon: "♧" },
     { label: "KYC reviews", href: "/kyc", icon: "✓", badgeKey: "kyc" },
+    { label: "Businesses", href: "/businesses", icon: "▣" },
   ] },
   { label: "Ajo oversight", items: [
     { label: "Ajo groups", href: "/ajo-groups", icon: "◌" },
