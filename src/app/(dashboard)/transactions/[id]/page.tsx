@@ -128,7 +128,7 @@ export default function TransactionDetailPage() {
         {pendingRequest && !txn.actions?.canDecideReversal && <button disabled className="h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-500 opacity-60">Awaiting another admin</button>}
         {pendingRequest && txn.actions?.canDecideReversal && <div className="grid grid-cols-2 gap-2"><button onClick={() => { setReason(""); setDialog("reject"); }} disabled={busy || !canReverse} className="h-11 rounded-xl border border-red-300 px-3 text-sm font-bold text-red-700 disabled:opacity-50">Reject</button><button onClick={() => { setReason(""); setDialog("approve"); }} disabled={busy || !canReverse} className="h-11 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white disabled:opacity-50">Approve</button></div>}
       </div>
-      <p className="mt-3 text-[10px] leading-4 text-slate-500">Approval requires a different administrator and a provider-confirmed failed or reversed status from the last 30 minutes.</p>
+      <p className="mt-3 text-[10px] leading-4 text-slate-500">Approval requires a different administrator unless you are a Super Admin, plus a provider-confirmed failed or reversed status from the last 30 minutes.</p>
     </aside>
 
     {dialog && <ActionDialog action={dialog} reason={reason} busy={busy} onReason={setReason} onCancel={() => { if (!busy) setDialog(null); }} onSubmit={submitDecision} />}
