@@ -31,7 +31,7 @@ const PROTECTED = [
   "/change-password",
 ];
 
-const PUBLIC = ["/login", "/mfa"];
+const PUBLIC = ["/login", "/mfa", "/forgot-password"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

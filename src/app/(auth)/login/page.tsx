@@ -40,6 +40,11 @@ export default function LoginPage() {
           <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" required placeholder="••••••••••••" className="mt-2 h-12 w-full rounded-lg border border-[#CBD5E1] px-3 text-sm outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" />
         </label>
         {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        <div className="text-right">
+          <button type="button" onClick={() => router.push("/forgot-password")} className="text-sm font-semibold text-[#2563EB] hover:underline">
+            Forgot password?
+          </button>
+        </div>
         <button disabled={loading} className="h-[52px] w-full rounded-lg bg-[#2563EB] text-sm font-bold text-white transition hover:bg-[#1D4ED8] disabled:opacity-60">{loading ? "Signing in…" : "Continue securely"}</button>
         {/* <button type="button" className="h-[52px] w-full rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#0F172A] hover:bg-slate-50">Continue with Google Workspace</button> */}
       </form>
