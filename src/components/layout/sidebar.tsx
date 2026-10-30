@@ -42,6 +42,7 @@ const NAV: NavGroup[] = [
   { label: "Platform", items: [
     { label: "Pricing & fees", href: "/fees", icon: "▣" },
     { label: "Feature flags", href: "/feature-flags", icon: "☷" },
+    { label: "Platform updates", href: "/broadcasts", icon: "✉" },
     { label: "Roles & access", href: "/roles", icon: "▢" },
     { label: "Audit trail", href: "/audit-logs", icon: "◴" },
     { label: "System health", href: "/system-health", icon: "ϟ" },

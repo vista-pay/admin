@@ -159,6 +159,19 @@ export type AdminProfile = {
   createdAt?: string;
 };
 
+export type AdminBroadcast = {
+  id: string;
+  title: string;
+  body: string;
+  status: "DRAFT" | "SCHEDULED" | "SENT" | "FAILED";
+  sentAt?: string | null;
+  recipientCount: number;
+  deliveredCount: number;
+  failureReason?: string | null;
+  createdAt: string;
+  createdBy: { firstName: string; lastName: string; email: string };
+};
+
 export type AdminRoleDefinition = {
   id: string;
   key: string;
@@ -272,6 +285,9 @@ export const adminApi = {
   content: () => apiFetch<unknown>("/admin/content"),
   featureFlags: () => apiFetch<unknown>("/admin/feature-flags"),
   approvalPolicies: () => apiFetch<unknown>("/admin/approval-policies"),
+  listBroadcasts: () => apiFetch<AdminBroadcast[]>("/admin/broadcasts"),
+  sendBroadcast: (body: { title: string; body: string }) =>
+    apiFetch<AdminBroadcast>("/admin/broadcasts", { method: "POST", body: JSON.stringify(body) }),
   navigationBadges: () => apiFetch<Record<string, number>>("/admin/navigation/badges"),
   markNavigationRead: (section: string) => apiFetch<unknown>(`/admin/navigation/${section}/read`, { method: "POST", body: "{}" }),
 

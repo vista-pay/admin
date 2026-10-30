@@ -26,6 +26,7 @@ const PROTECTED = [
   "/referrals",
   "/content",
   "/feature-flags",
+  "/broadcasts",
   "/roles",
   "/system-health",
   "/change-password",

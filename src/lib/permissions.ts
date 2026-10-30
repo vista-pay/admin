@@ -26,6 +26,7 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   { key: "fees", label: "Pricing & fees", group: "Platform" },
   { key: "limits", label: "Transaction limits", group: "Platform" },
   { key: "feature-flags", label: "Feature flags", group: "Platform" },
+  { key: "broadcasts", label: "Platform updates", group: "Platform" },
   { key: "roles", label: "Roles & access", group: "Platform" },
   { key: "audit-logs", label: "Audit trail", group: "Platform" },
   { key: "system-health", label: "System health", group: "Platform" },
