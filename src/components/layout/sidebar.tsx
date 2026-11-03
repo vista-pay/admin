@@ -31,6 +31,7 @@ const NAV: NavGroup[] = [
   ] },
   { label: "Communities", items: [
     { label: "Communities", href: "/communities", icon: "♜", badgeKey: "communities" },
+    { label: "Subscription plans", href: "/community-plans", icon: "₦" },
     { label: "Organizer settlements", href: "/organizer-settlements", icon: "%" },
   ] },
   { label: "Growth & marketing", items: [

@@ -38,6 +38,7 @@ const OPEN_ROUTES = new Set(["settings", "change-password"]);
 /** Pages without their own sidebar tab borrow the permission of their area. */
 const ROUTE_ALIASES: Record<string, string> = {
   businesses: "users",
+  "community-plans": "fees",
   limits: "limits",
   providers: "system-health",
   reports: "overview",
