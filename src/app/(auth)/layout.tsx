@@ -6,7 +6,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <main className="flex min-h-screen bg-white">
         <section className="relative hidden w-[43%] min-w-[480px] flex-col overflow-hidden bg-[#101828] px-16 py-16 text-white lg:flex">
           <div className="relative z-10 flex items-center gap-3">
-            <img src="/rendi-brand-symbol.png" alt="Rendi" className="h-10 w-10 rounded-[11px] bg-white" />
+            <img src="/rendi-logo.svg" alt="Rendi" className="h-10 w-10 rounded-[11px] bg-white" />
             <span className="text-[21px] font-extrabold tracking-tight">RENDI</span>
           </div>
           <div className="relative z-10 my-auto max-w-[460px]">

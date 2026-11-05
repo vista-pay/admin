@@ -82,7 +82,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex h-screen flex-1 flex-col overflow-y-auto">
           <div className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
             <button onClick={() => setMenuOpen(true)} aria-label="Open navigation" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-xl text-slate-700">☰</button>
-            <img src="/rendi-brand-symbol.png" alt="Rendi" className="h-7 w-7 rounded-md" />
+            <img src="/rendi-logo.svg" alt="Rendi" className="h-7 w-7 rounded-md" />
             <span className="text-sm font-extrabold text-[#0F172A]">RENDI</span>
             <span className="rounded bg-[#2563EB] px-1.5 py-0.5 text-[9px] font-bold text-white">ADMIN</span>
           </div>

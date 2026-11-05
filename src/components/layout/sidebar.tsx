@@ -78,7 +78,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         open ? "translate-x-0" : "-translate-x-full",
       )}>
         <div className="sticky top-0 z-10 flex h-[72px] shrink-0 items-center gap-2.5 bg-[#0F172A] px-4">
-          <img src="/rendi-brand-symbol.png" alt="Rendi" className="h-8 w-8 rounded-[9px]" />
+          <img src="/rendi-logo.svg" alt="Rendi" className="h-8 w-8 rounded-[9px]" />
           <span className="text-[18px] font-extrabold tracking-tight">RENDI</span>
           <span className="rounded-md bg-[#2563EB] px-1.5 py-0.5 text-[10px] font-bold">ADMIN</span>
           <button onClick={onClose} className="ml-auto rounded-md p-2 text-white/70 lg:hidden" aria-label="Close menu">×</button>
