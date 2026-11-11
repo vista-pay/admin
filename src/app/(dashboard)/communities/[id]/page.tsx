@@ -17,9 +17,28 @@ type Detail = {
   address: string | null;
   country: string;
   city: string | null;
+  state: string | null;
   category: string | null;
   registrationNumber: string | null;
   status: "PENDING" | "VERIFIED" | "SUSPENDED" | "REJECTED";
+
+  // Who registered it. Deliberately not the owner account: that account is
+  // the organisation's, and this is the human behind the application.
+  registrarName: string | null;
+  registrarEmail: string | null;
+  registrarPhone: string | null;
+
+  // The verification profile, from the modal the portal makes the owner
+  // complete. `profileSubmittedAt` is null until they do, and approval is
+  // refused until then — there is nothing to decide on.
+  communityType: string | null;
+  companySize: string | null;
+  hasExistingMembers: boolean | null;
+  existingMemberCount: number | null;
+  foundedYear: number | null;
+  website: string | null;
+  cacDocumentUrl: string | null;
+  profileSubmittedAt: string | null;
   organizerFeesEnabled: boolean;
   isDiscoverable: boolean;
   verifiedAt: string | null;
@@ -174,11 +193,25 @@ export default function CommunityDetailPage({
   // than buried in the detail panes, because an approval here lets a
   // community collect money from its members. Verification is assessed on
   // the community (the business), not on the owner personally.
+  const profileSubmitted = Boolean(data.profileSubmittedAt);
+
   const checks = [
+    {
+      label: "Verification profile submitted",
+      ok: profileSubmitted,
+      detail: profileSubmitted
+        ? `Submitted ${formatDate(data.profileSubmittedAt!)}`
+        : "Outstanding — the owner has not completed it, and approval is blocked until they do",
+    },
     {
       label: "Registration number supplied",
       ok: Boolean(data.registrationNumber),
       detail: data.registrationNumber ?? "None on file — unregistered association",
+    },
+    {
+      label: "Registration document attached",
+      ok: Boolean(data.cacDocumentUrl),
+      detail: data.cacDocumentUrl ? "CAC or cooperative certificate on file" : "None attached",
     },
     {
       label: "Contact details complete",
@@ -191,6 +224,9 @@ export default function CommunityDetailPage({
       detail: `${data._count?.members ?? 0} member${data._count?.members === 1 ? "" : "s"}`,
     },
   ];
+
+  const sentence = (value: string | null) =>
+    value ? value.charAt(0) + value.slice(1).toLowerCase().replace(/_/g, " ") : null;
 
   return (
     <div className="flex flex-1 flex-col bg-[#F8FAFC]">
@@ -271,6 +307,83 @@ export default function CommunityDetailPage({
                 </Link>
               </div>
             )}
+          </Panel>
+
+          <Panel
+            title={
+              profileSubmitted
+                ? "Verification profile"
+                : "Verification profile — not submitted yet"
+            }
+          >
+            {profileSubmitted ? (
+              <dl className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+                <Field label="Type">{sentence(data.communityType) ?? "Not stated"}</Field>
+                <Field label="Expected size">
+                  {data.companySize ? `${data.companySize} members` : "Not stated"}
+                </Field>
+                <Field label="Existing members">
+                  {data.hasExistingMembers === null
+                    ? "Not stated"
+                    : data.hasExistingMembers
+                      ? `Yes — about ${data.existingMemberCount ?? "an unstated number"}`
+                      : "No, starting fresh"}
+                </Field>
+                <Field label="Founded">{data.foundedYear ?? "Not stated"}</Field>
+                <Field label="Location">
+                  {[data.city, data.state, data.country].filter(Boolean).join(", ") ||
+                    "Not stated"}
+                </Field>
+                <Field label="Website">
+                  {data.website ? (
+                    <a
+                      href={data.website}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-[#012A9D] hover:underline"
+                    >
+                      {data.website}
+                    </a>
+                  ) : (
+                    "None"
+                  )}
+                </Field>
+                <Field label="Registration document">
+                  {data.cacDocumentUrl ? (
+                    <a
+                      href={data.cacDocumentUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-[#012A9D] hover:underline"
+                    >
+                      Open the attached document →
+                    </a>
+                  ) : (
+                    "None attached"
+                  )}
+                </Field>
+                <Field label="Submitted">{formatDate(data.profileSubmittedAt!)}</Field>
+              </dl>
+            ) : (
+              <p className="px-5 py-4 text-sm text-slate-600">
+                The owner has not completed the verification questionnaire. They see it as a modal
+                they cannot dismiss every time they open the portal, so it is usually a matter of
+                hours. Approval is refused until it arrives; a registration that is plainly not
+                legitimate can still be rejected now.
+              </p>
+            )}
+          </Panel>
+
+          <Panel title="Administrator (registrar)">
+            <dl className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+              <Field label="Name">{data.registrarName ?? "Not recorded"}</Field>
+              <Field label="Email">{data.registrarEmail ?? "Not recorded"}</Field>
+              <Field label="Phone">{data.registrarPhone ?? "Not recorded"}</Field>
+            </dl>
+            <p className="border-t border-slate-100 bg-slate-50/60 px-5 py-2.5 text-xs text-slate-500">
+              The person who filled in the registration. Their details are a contact, not a login —
+              they can hold an ordinary personal Rendi account on this same email and phone.
+            </p>
           </Panel>
 
           <Panel title="Community details">
@@ -376,10 +489,18 @@ export default function CommunityDetailPage({
                 </p>
               )}
 
+              {!profileSubmitted && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+                  Approval is unavailable until the verification profile arrives — there is nothing
+                  to approve this on yet. Rejection stays open.
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <Button
                   variant={decision === "approve" ? "primary" : "outline"}
                   className="flex-1"
+                  disabled={!profileSubmitted}
                   onClick={() => setDecision(decision === "approve" ? null : "approve")}
                 >
                   {data.status === "VERIFIED" ? "Re-verify" : "Approve"}
