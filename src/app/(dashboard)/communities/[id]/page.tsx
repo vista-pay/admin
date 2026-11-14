@@ -27,6 +27,10 @@ type Detail = {
   registrarName: string | null;
   registrarEmail: string | null;
   registrarPhone: string | null;
+  // APPLICATION when the registrar typed these on the form, MEMBER_RECORD
+  // when they come from whoever holds the registrar's post — communities
+  // registered before the form existed have no stored values of their own.
+  registrarSource: "APPLICATION" | "MEMBER_RECORD" | null;
 
   // The verification profile, from the modal the portal makes the owner
   // complete. `profileSubmittedAt` is null until they do, and approval is
@@ -383,6 +387,13 @@ export default function CommunityDetailPage({
             <p className="border-t border-slate-100 bg-slate-50/60 px-5 py-2.5 text-xs text-slate-500">
               The person who filled in the registration. Their details are a contact, not a login —
               they can hold an ordinary personal Rendi account on this same email and phone.
+              {data.registrarSource === "MEMBER_RECORD" ? (
+                <>
+                  {" "}
+                  This community registered before the form collected these fields, so what is shown
+                  is the account of whoever holds the registrar&apos;s post below.
+                </>
+              ) : null}
             </p>
           </Panel>
 
