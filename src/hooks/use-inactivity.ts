@@ -14,14 +14,24 @@ export function useInactivity() {
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const logout = useCallback(() => {
-    setShowModal(false);
+  /**
+   * Leave. Nothing here touches state, which is what lets the countdown
+   * effect call it: the component is on its way out, so there is no modal
+   * left to close.
+   */
+  const signOut = useCallback(() => {
     // Fire-and-forget: the redirect must not wait on the network, but the
     // server-side revocation still has to happen - clearing a cookie alone
     // would leave a usable admin session behind.
     adminApi.logout().catch(() => undefined);
     router.replace("/login");
   }, [router]);
+
+  /** The modal's own "Log out" button: close it, then go. */
+  const logout = useCallback(() => {
+    setShowModal(false);
+    signOut();
+  }, [signOut]);
 
   const resetIdle = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -59,25 +69,34 @@ export function useInactivity() {
   }, [resetIdle]);
 
   // countdown when modal is open
+  //
+  // The updater only computes the next number. It used to call logout() from
+  // inside itself, which React warned about as a setState during render — a
+  // state updater is run during the render phase and has to be pure, so
+  // redirecting and closing the modal from in there updated the Router while
+  // DashboardLayout was still rendering.
   useEffect(() => {
     if (!showModal) {
       if (countdownTimer.current) clearInterval(countdownTimer.current);
       return;
     }
     countdownTimer.current = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          if (countdownTimer.current) clearInterval(countdownTimer.current);
-          logout();
-          return 0;
-        }
-        return c - 1;
-      });
+      setCountdown((c) => (c <= 1 ? 0 : c - 1));
     }, 1000);
     return () => {
       if (countdownTimer.current) clearInterval(countdownTimer.current);
     };
-  }, [showModal, logout]);
+  }, [showModal]);
+
+  // Reaching zero is what signs the admin out, in an effect rather than in
+  // the updater above: by the time this runs the countdown is committed, so
+  // navigating away is a side effect of a finished render instead of one
+  // happening during somebody else's.
+  useEffect(() => {
+    if (!showModal || countdown > 0) return;
+    if (countdownTimer.current) clearInterval(countdownTimer.current);
+    signOut();
+  }, [showModal, countdown, signOut]);
 
   // also reset on visibility change (user returns to tab)
   useEffect(() => {
