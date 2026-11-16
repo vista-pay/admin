@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { ChatThread } from "@/components/admin/chat-thread";
 import { uploadAccountOfficerFile, type UploadedFile } from "@/lib/upload";
 import { cn } from "@/lib/utils";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 
 type OfficerRow = {
   communityId: string;
@@ -93,6 +94,10 @@ export default function AccountOfficersPage() {
   const [pending, setPending] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
+  // The listener is registered once; without a ref it would close over the
+  // thread that was open when it was created.
+  const threadRef = useRef<Thread | null>(null);
+  threadRef.current = thread;
 
   const load = useCallback(async () => {
     try {
@@ -119,6 +124,22 @@ export default function AccountOfficersPage() {
     const timer = window.setTimeout(() => setToast(""), 3500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  /**
+   * A community wrote — refresh the queue, and the open thread if it is the
+   * one that moved. Refetched rather than appended from the socket: the event
+   * carries no body, so everything on screen has been through the same
+   * authorization as any other read.
+   */
+  useRealtimeEvent("account-officer.message", (payload) => {
+    void load();
+    if (payload.communityId && payload.communityId === threadRef.current?.community.id) {
+      void adminApi
+        .accountOfficerThread(payload.communityId)
+        .then((response) => setThread(response.data as Thread))
+        .catch(() => undefined);
+    }
+  });
 
   async function openThread(row: OfficerRow) {
     try {
