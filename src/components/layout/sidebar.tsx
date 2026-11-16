@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { adminApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { pathPermission } from "@/lib/permissions";
 import { useAdminSession } from "@/components/providers/session-provider";
 
-type NavItem = { label: string; href: string; icon: string; badgeKey?: string };
+type NavChild = { label: string; href: string; badgeKey?: string };
+type NavItem = { label: string; href: string; icon: string; badgeKey?: string; children?: NavChild[] };
 type NavGroup = { label: string; items: NavItem[] };
 
 const NAV: NavGroup[] = [
-  { label: "Overview", items: [{ label: "Command center", href: "/overview", icon: "⌂" }] },
+  { label: "Overview", items: [
+    { label: "Command center", href: "/overview", icon: "⌂" },
+    { label: "Account officers", href: "/account-officers", icon: "☏" },
+  ] },
   { label: "Money & risk", items: [
     { label: "Transactions", href: "/transactions", icon: "▤" },
     { label: "Settlements & recon", href: "/reconciliation", icon: "⛓", badgeKey: "reconciliation" },
@@ -31,7 +35,14 @@ const NAV: NavGroup[] = [
   ] },
   { label: "Communities", items: [
     { label: "Communities", href: "/communities", icon: "♜", badgeKey: "communities" },
-    { label: "Subscription plans", href: "/community-plans", icon: "₦" },
+    // A dropdown because the tier definitions, who is on which tier, and
+    // what the tiers bring in are three different jobs — and the parent link
+    // opens a hub page that says so, with the numbers and a button into each.
+    { label: "Subscriptions", href: "/subscriptions", icon: "₦", children: [
+      { label: "Plans", href: "/community-plans" },
+      { label: "Subscribers", href: "/community-subscriptions" },
+      { label: "Revenue", href: "/subscription-revenue" },
+    ] },
     { label: "Organizer settlements", href: "/organizer-settlements", icon: "%" },
   ] },
   { label: "Growth & marketing", items: [
@@ -54,22 +65,53 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const pathname = usePathname();
   const router = useRouter();
   const [badges,setBadges]=useState<Record<string,number>>({});
+  // Chevron overrides for dropdown items; absent means "derive from the route".
+  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
   const { profile, can } = useAdminSession();
-  // Each tab is gated by the permission its route maps to; empty groups vanish.
+  // Each tab is gated by the permission its route maps to; empty groups
+  // vanish. A dropdown is filtered child by child — its children can map to
+  // different permissions — and survives only while something remains, with
+  // its link pointing at the first child the admin may actually open.
   const nav = NAV.map((group) => ({
     ...group,
-    items: group.items.filter((item) => can(pathPermission(item.href))),
+    items: group.items
+      .map((item) => {
+        if (!item.children) return can(pathPermission(item.href)) ? item : null;
+        const children = item.children.filter((child) => can(pathPermission(child.href)));
+        if (!children.length) return null;
+        // The parent keeps its own page (the hub) when the admin may open
+        // it; otherwise it falls back to the first child they may.
+        return { ...item, children, href: can(pathPermission(item.href)) ? item.href : children[0].href };
+      })
+      .filter((item): item is NavItem => item !== null),
   })).filter((group) => group.items.length > 0);
-  useEffect(()=>{
-    let active=true;
-    const refresh=()=>adminApi.navigationBadges().then(r=>{if(active)setBadges(r.data)}).catch(()=>undefined);
-    const section=pathname.split("/").filter(Boolean)[0];
-    const tracked=NAV.flatMap(group=>group.items).find(item=>item.href===`/${section}`)?.badgeKey;
-    if(tracked)adminApi.markNavigationRead(tracked).then(refresh).catch(refresh);else refresh();
-    const timer=window.setInterval(refresh,30_000);
-    const visible=()=>{if(document.visibilityState==="visible")refresh()};document.addEventListener("visibilitychange",visible);
-    return()=>{active=false;window.clearInterval(timer);document.removeEventListener("visibilitychange",visible)};
-  },[pathname]);
+  const refresh = useCallback(
+    () => adminApi.navigationBadges().then((r) => setBadges(r.data)).catch(() => undefined),
+    [],
+  );
+
+  // One fetch on mount, then a once-a-minute poll plus a refetch when the tab
+  // regains focus. Deliberately NOT keyed on the route: navigating does not
+  // change what is waiting elsewhere, and the previous per-navigation refetch
+  // (plus a 30s interval reset on every click) is what made this endpoint so
+  // chatty.
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    const visible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", visible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
+  }, [refresh]);
+
+  // Entering a badged section is the one navigation that changes a count —
+  // it clears that section's badge — so only then is a mark-read + refetch
+  // sent.
+  useEffect(() => {
+    const section = pathname.split("/").filter(Boolean)[0];
+    const tracked = NAV.flatMap((group) => group.items.flatMap((item) => [item, ...(item.children ?? [])]))
+      .find((item) => item.href === `/${section}`)?.badgeKey;
+    if (tracked) adminApi.markNavigationRead(tracked).then(() => void refresh()).catch(() => undefined);
+  }, [pathname, refresh]);
   return (
     <>
       {open && <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[1px] lg:hidden" />}
@@ -89,16 +131,70 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
             <div key={group.label}>
               <p className="mb-1 mt-1 px-3 text-[10px] font-bold uppercase tracking-[0.08em] text-white/45">{group.label}</p>
               {group.items.map((item) => {
-                const active = pathname === item.href || (item.href !== "/overview" && pathname.startsWith(item.href));
+                const onChild = (item.children ?? []).some((child) => pathname === child.href || pathname.startsWith(child.href + "/"));
+                // A dropdown parent highlights only on its own hub page; on a
+                // child page the active child row carries it, so the two
+                // never double up.
+                const active = item.children
+                  ? pathname === item.href && !onChild
+                  : pathname === item.href || (item.href !== "/overview" && pathname.startsWith(item.href));
+                // Open while the admin is inside the section; the chevron can
+                // override either way until they navigate elsewhere.
+                const open = expanded[item.label] ?? onChild;
                 return (
-                  <Link key={item.href} href={item.href} onClick={onClose} className={cn(
-                    "mb-1 flex h-8 items-center gap-2.5 rounded-lg px-3 text-[12px] transition-colors",
-                    active ? "bg-[#2563EB] font-semibold text-white" : "text-white/70 hover:bg-white/10 hover:text-white",
-                  )}>
-                    <span aria-hidden className="flex w-[18px] items-center justify-center text-base leading-none">{item.icon}</span>
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    {item.badgeKey&&badges[item.badgeKey]>0&&<span className="min-w-5 rounded-full bg-[#2563EB] px-1.5 py-0.5 text-center text-[10px] font-bold text-white">{badges[item.badgeKey]>99?"99+":badges[item.badgeKey]}</span>}
-                  </Link>
+                  <div key={item.label}>
+                    <div className={cn(
+                      "mb-1 flex h-8 items-center rounded-lg text-[12px] transition-colors",
+                      active ? "bg-[#2563EB] font-semibold text-white" : "text-white/70 hover:bg-white/10 hover:text-white",
+                    )}>
+                      <Link href={item.href} onClick={onClose} className="flex min-w-0 flex-1 items-center gap-2.5 px-3">
+                        <span aria-hidden className="flex w-[18px] items-center justify-center text-base leading-none">{item.icon}</span>
+                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        {item.badgeKey&&badges[item.badgeKey]>0&&<span className="min-w-5 rounded-full bg-[#2563EB] px-1.5 py-0.5 text-center text-[10px] font-bold text-white">{badges[item.badgeKey]>99?"99+":badges[item.badgeKey]}</span>}
+                      </Link>
+                      {item.children && (
+                        <button
+                          aria-label={`${open ? "Collapse" : "Expand"} ${item.label}`}
+                          aria-expanded={open}
+                          onClick={() => setExpanded((prev) => ({ ...prev, [item.label]: !open }))}
+                          className={cn(
+                            "mr-1 flex h-7 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
+                            active ? "text-white hover:bg-white/20" : "text-white/80 hover:bg-white/15 hover:text-white",
+                          )}
+                        >
+                          <svg
+                            viewBox="0 0 16 16"
+                            className={cn("h-4 w-4 transition-transform duration-150", open && "rotate-90")}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M6 3.5 L11 8 L6 12.5" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    {item.children && open && (
+                      <ul className="mb-1 ml-[21px] border-l border-white/15 pl-2">
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.href || pathname.startsWith(child.href + "/");
+                          return (
+                            <li key={child.href}>
+                              <Link href={child.href} onClick={onClose} className={cn(
+                                "mb-0.5 flex h-7 items-center gap-2 rounded-lg px-2.5 text-[12px] transition-colors",
+                                childActive ? "bg-[#2563EB] font-semibold text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
+                              )}>
+                                <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                                {child.badgeKey&&badges[child.badgeKey]>0&&<span className="min-w-5 rounded-full bg-[#2563EB] px-1.5 py-0.5 text-center text-[10px] font-bold text-white">{badges[child.badgeKey]>99?"99+":badges[child.badgeKey]}</span>}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 );
               })}
             </div>

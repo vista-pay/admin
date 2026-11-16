@@ -20,6 +20,8 @@ type Plan = {
   allowsApiAccess: boolean;
   isActive: boolean;
   isNegotiated: boolean;
+  /** Live subscriptions on this tier — how far an edit here reaches. */
+  communities?: number;
   sortOrder: number;
 };
 
@@ -135,7 +137,7 @@ export default function CommunityPlansPage() {
     return [...byGroup.entries()];
   }, [catalogue]);
 
-  const anyEnforced = catalogue.some((feature) => feature.enforced);
+  const enforced = catalogue.filter((feature) => feature.enforced);
 
   function edit(planId: string, patch: Partial<Draft>) {
     setDrafts((current) => ({ ...current, [planId]: { ...current[planId], ...patch } }));
@@ -180,25 +182,49 @@ export default function CommunityPlansPage() {
     }
   }
 
+  /**
+   * The plan every community lands on — the first active, self-serve one by
+   * display order. Mirrors `SubscriptionsService.defaultPlan` so the badge
+   * below names the same plan the server enrols on.
+   */
+  const basePlanId =
+    plans.filter((plan) => plan.isActive && !plan.isNegotiated)[0]?.id ?? null;
+
   return (
     <main className="mx-auto w-full max-w-[1400px] flex-1 p-4 sm:p-6 lg:p-8">
       <header>
         <h1 className="text-2xl font-black">Community subscription plans</h1>
         <p className="mt-1 text-sm text-slate-600">
           Price, limits and features for every tier shown on a community&apos;s Billing &amp; plan page.
+          Every community is on one of these — there is no plan-less state.
         </p>
       </header>
 
       {/* Said plainly rather than left to be discovered: ticking a feature
           changes what the pricing page advertises, and nothing more, until
-          entitlement checks exist for it. */}
-      {!anyEnforced && catalogue.length > 0 && (
+          entitlement checks exist for it. The "Enforced" pill marks the ones
+          that do gate something. */}
+      {enforced.length < catalogue.length && catalogue.length > 0 && (
         <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-          <strong>Features are descriptive today.</strong> They set what each plan advertises on the
-          community billing page. No part of the product currently refuses an action because a plan
-          lacks a feature — only the member, staff-seat and Ajo-group limits below are enforced.
+          {enforced.length === 0 ? (
+            <><strong>Features are descriptive today.</strong> They set what each plan advertises on the
+            community billing page. No part of the product currently refuses an action because a plan
+            lacks a feature — only the member, staff-seat and Ajo-group limits below are enforced.</>
+          ) : (
+            <><strong>Most features are still descriptive.</strong> Only{" "}
+            {enforced.map((feature) => feature.label).join(", ")} currently gates anything (alongside
+            the member, staff-seat and Ajo-group limits). The remaining features set what each plan
+            advertises on the community billing page, nothing more.</>
+          )}
         </p>
       )}
+
+      <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900">
+        <strong>What an edit does to communities already on a tier:</strong> anything you{" "}
+        <strong>add</strong> — a feature, a higher limit, API access — reaches them immediately.
+        Anything you <strong>remove</strong> takes effect at their next renewal, because they have
+        already paid for the period they are in. A price change applies to the next invoice.
+      </p>
 
       {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
@@ -220,15 +246,55 @@ export default function CommunityPlansPage() {
                   />
                   <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-slate-400">
                     {plan.code}
-                    {plan.isNegotiated && " · negotiated"}
+                  </p>
+                  {/* Who this edit reaches. A price or feature change is
+                      abstract until you know how many cooperatives are on the
+                      other side of it. */}
+                  <p className="mt-1 text-xs font-semibold text-slate-600">
+                    {(plan.communities ?? 0) === 0 ? (
+                      <span className="text-slate-400">No communities on this tier</span>
+                    ) : (
+                      <>
+                        {plan.communities}{" "}
+                        {plan.communities === 1 ? "community" : "communities"} on this tier
+                      </>
+                    )}
                   </p>
                 </div>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${plan.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
-                >
-                  {plan.isActive ? "LIVE" : "HIDDEN"}
-                </span>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold ${plan.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
+                  >
+                    {plan.isActive ? "LIVE" : "HIDDEN"}
+                  </span>
+                  {/* The two roles a plan can hold, and both change what the
+                      price field below means. */}
+                  {plan.isNegotiated ? (
+                    <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700">
+                      CONTACT SALES
+                    </span>
+                  ) : plan.id === basePlanId ? (
+                    <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">
+                      BASE PLAN
+                    </span>
+                  ) : null}
+                </div>
               </div>
+
+              {plan.isNegotiated && (
+                <p className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-[11px] leading-4 text-violet-900">
+                  Agreed with each community rather than sold self-serve. Communities see
+                  &ldquo;Custom&rdquo; and a Contact support button; the price below is only what an
+                  admin applies after that conversation.
+                </p>
+              )}
+              {plan.id === basePlanId && (
+                <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-[11px] leading-4 text-blue-900">
+                  Every community starts here and returns here when a paid plan ends — there is no
+                  plan-less state. Pricing it above ₦0 charges every community on it, so change the
+                  price deliberately.
+                </p>
+              )}
 
               <label className="mt-3 block text-xs font-bold text-slate-600">
                 Description

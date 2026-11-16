@@ -185,8 +185,34 @@ export type AdminRoleDefinition = {
 };
 
 // Typed helpers for admin domain
+/** One suggestion in the console's global search. */
+export type AdminSearchType = "USER" | "TRANSACTION" | "COMMUNITY" | "BUSINESS" | "AJO_GROUP";
+
+export interface AdminSearchResult {
+  type: AdminSearchType;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  meta: string | null;
+  /** Where the console should go. Decided by the API, not guessed here. */
+  href: string;
+}
+
+export interface AdminSearchResponse {
+  query: string;
+  results: AdminSearchResult[];
+  /** True when there was more than the dropdown asked for. */
+  truncated: boolean;
+}
+
 export const adminApi = {
   me: () => apiFetch<AdminProfile>("/admin/me"),
+  /**
+   * Type-ahead across every source the signed-in role may open. `signal` lets
+   * the caller drop a reply for a query the admin has already typed past.
+   */
+  search: (q: string, signal?: AbortSignal) =>
+    apiFetch<AdminSearchResponse>(`/admin/search?q=${encodeURIComponent(q)}`, { signal }),
   login: (body: { email: string; password: string }) =>
     apiFetch<{ challengeToken: string; mfaRequired: boolean }>("/admin/auth/login", {
       method: "POST",
@@ -279,10 +305,46 @@ export const adminApi = {
     apiFetch<unknown>(`/admin/transactions/${id}/reversal-requests`, { method: "POST", body: JSON.stringify({ reason }) }),
   decideTransactionReversal: (id: string, requestId: string, approve: boolean, reason: string) =>
     apiFetch<unknown>(`/admin/transactions/${id}/reversal-requests/${requestId}`, { method: "PATCH", body: JSON.stringify({ approve, reason }) }),
+  // ── Growth & marketing ────────────────────────────────────────────────
+  growthUsers: (params: { days?: number; channel?: string; stage?: string; search?: string; page?: number; limit?: number }) =>
+    apiFetch<unknown>("/admin/growth/users", { params: params as Record<string, string | number | boolean | undefined> }),
   campaigns: () => apiFetch<unknown>("/admin/campaigns"),
+  getCampaign: (id: string) => apiFetch<unknown>(`/admin/campaigns/${id}`),
+  createCampaign: (body: Record<string, unknown>) =>
+    apiFetch<unknown>("/admin/campaigns", { method: "POST", body: JSON.stringify(body) }),
+  updateCampaign: (id: string, body: Record<string, unknown>) =>
+    apiFetch<unknown>(`/admin/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  decideCampaign: (id: string, body: { status: string; reason?: string }) =>
+    apiFetch<unknown>(`/admin/campaigns/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
+  submitCampaign: (id: string) =>
+    apiFetch<unknown>(`/admin/campaigns/${id}/submit`, { method: "POST", body: "{}" }),
+  /** Live audience + per-channel reach counts for the composer. */
+  estimateCampaignAudience: (body: { rules: Record<string, unknown>; channels?: string[] }) =>
+    apiFetch<unknown>("/admin/campaigns/estimate", { method: "POST", body: JSON.stringify(body) }),
   promotions: () => apiFetch<unknown>("/admin/promotions"),
+  createPromotion: (body: Record<string, unknown>) =>
+    apiFetch<unknown>("/admin/promotions", { method: "POST", body: JSON.stringify(body) }),
+  decidePromotion: (id: string, body: { status: string; reason?: string }) =>
+    apiFetch<unknown>(`/admin/promotions/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
+  submitPromotion: (id: string) =>
+    apiFetch<unknown>(`/admin/promotions/${id}/submit`, { method: "POST", body: "{}" }),
   referrals: () => apiFetch<unknown>("/admin/referrals"),
+  createReferralProgram: (body: Record<string, unknown>) =>
+    apiFetch<unknown>("/admin/referrals/programs", { method: "POST", body: JSON.stringify(body) }),
+  /** Edits apply immediately but pull the programme back to pending approval. */
+  updateReferralProgram: (id: string, body: Record<string, unknown>) =>
+    apiFetch<unknown>(`/admin/referrals/programs/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  decideReferralProgram: (id: string, body: { status: string; reason?: string }) =>
+    apiFetch<unknown>(`/admin/referrals/programs/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
   content: () => apiFetch<unknown>("/admin/content"),
+  createContentItem: (body: Record<string, unknown>) =>
+    apiFetch<unknown>("/admin/content/items", { method: "POST", body: JSON.stringify(body) }),
+  createPartnerOffer: (body: Record<string, unknown>) =>
+    apiFetch<unknown>("/admin/content/offers", { method: "POST", body: JSON.stringify(body) }),
+  decideContent: (kind: "item" | "offer", id: string, body: { status: string; reason?: string }) =>
+    apiFetch<unknown>(`/admin/content/${kind}/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
+  submitContent: (kind: "item" | "offer", id: string) =>
+    apiFetch<unknown>(`/admin/content/${kind}/${id}/submit`, { method: "POST", body: "{}" }),
   featureFlags: () => apiFetch<unknown>("/admin/feature-flags"),
   approvalPolicies: () => apiFetch<unknown>("/admin/approval-policies"),
   listBroadcasts: () => apiFetch<AdminBroadcast[]>("/admin/broadcasts"),
@@ -304,10 +366,104 @@ export const adminApi = {
    */
   reviewCommunity: (
     id: string,
-    body: { approve: boolean; reason?: string; organizerFeesEnabled?: boolean },
+    body: {
+      approve: boolean;
+      reason?: string;
+      organizerFeesEnabled?: boolean;
+      /** The name exactly as the registration document carries it. */
+      legalName?: string;
+    },
   ) =>
     apiFetch<unknown>(`/admin/communities/${id}/review`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // ── Community subscriptions (who is on which tier, and revenue) ───────
+  listCommunitySubscribers: (params: { search?: string; planId?: string; page?: number; limit?: number }) =>
+    apiFetch<unknown>("/admin/communities/subscriptions", {
+      params: params as Record<string, string | number | boolean | undefined>,
+    }),
+  /**
+   * Same billing semantics as the community changing plan themselves: an
+   * upgrade debits the community wallet now, a downgrade waits for the paid
+   * period unless `immediate`. The reason lands in both audit trails.
+   */
+  changeCommunityPlan: (communityId: string, body: { planId: string; immediate?: boolean; reason: string }) =>
+    apiFetch<unknown>(`/admin/communities/${communityId}/subscription/change-plan`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  subscriptionRevenue: (months?: number) =>
+    apiFetch<unknown>("/admin/communities/subscriptions/revenue", { params: { months } }),
+  /**
+   * Communities that pressed "Contact support" on the Enterprise card.
+   * Enterprise carries no self-serve price, so this queue is where those
+   * sales conversations start.
+   */
+  enterpriseEnquiries: () =>
+    apiFetch<unknown>("/admin/communities/subscriptions/enterprise-enquiries"),
+  /**
+   * Enterprise enquiries are ordinary support tickets, so the thread, the
+   * reply and the status change all go through the support desk rather than
+   * a parallel queue only this page knows about.
+   */
+  supportTicket: (reference: string) =>
+    apiFetch<unknown>(`/admin/support/tickets/${reference}`),
+  replySupportTicket: (reference: string, body: { body: string; isInternal?: boolean }) =>
+    apiFetch<unknown>(`/admin/support/tickets/${reference}/reply`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateSupportTicketStatus: (reference: string, body: { status: string; priority?: string }) =>
+    apiFetch<unknown>(`/admin/support/tickets/${reference}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  // ── Media ─────────────────────────────────────────────────────────────
+  /**
+   * Mints a Cloudinary signature for a banner image. The browser uploads the
+   * file straight to Cloudinary with these fields; only the resulting
+   * secure_url is stored on the banner.
+   */
+  bannerUploadSignature: () =>
+    apiFetch<{
+      cloudName: string;
+      apiKey: string;
+      timestamp: number;
+      signature: string;
+      folder: string;
+      publicId: string;
+      uploadUrl: string;
+      expiresAt: string;
+    }>("/admin/media/banner-upload-signature", { method: "POST", body: "{}" }),
+
+  // ── Account officers (dedicated support) ──────────────────────────────
+  listAccountOfficerCommunities: () => apiFetch<unknown>("/admin/account-officers"),
+  accountOfficerCandidates: () => apiFetch<unknown>("/admin/account-officers/candidates"),
+  assignAccountOfficer: (communityId: string, body: { adminUserId: string | null; note?: string; reason: string }) =>
+    apiFetch<unknown>(`/admin/account-officers/${communityId}`, { method: "PUT", body: JSON.stringify(body) }),
+  accountOfficerThread: (communityId: string) =>
+    apiFetch<unknown>(`/admin/account-officers/${communityId}/messages`),
+  replyAccountOfficerThread: (
+    communityId: string,
+    text: string,
+    attachments: Array<{ fileName: string; fileUrl: string; mimeType: string; sizeBytes: number }> = [],
+  ) =>
+    apiFetch<unknown>(`/admin/account-officers/${communityId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text, ...(attachments.length ? { attachments } : {}) }),
+    }),
+  /** Short-lived Cloudinary signature for a file sent in an officer thread. */
+  accountOfficerUploadSignature: () =>
+    apiFetch<{
+      cloudName: string;
+      apiKey: string;
+      timestamp: number;
+      signature: string;
+      folder: string;
+      publicId: string;
+      uploadUrl: string;
+    }>("/admin/media/account-officer-upload-signature", { method: "POST", body: "{}" }),
 };

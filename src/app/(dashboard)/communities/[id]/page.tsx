@@ -20,6 +20,8 @@ type Detail = {
   state: string | null;
   category: string | null;
   registrationNumber: string | null;
+  // As the registration document carries it, recorded at verification.
+  legalName: string | null;
   status: "PENDING" | "VERIFIED" | "SUSPENDED" | "REJECTED";
 
   // Who registered it. Deliberately not the owner account: that account is
@@ -106,6 +108,7 @@ export default function CommunityDetailPage({
   const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
   const [reason, setReason] = useState("");
   const [allowOrganizerFees, setAllowOrganizerFees] = useState(false);
+  const [legalName, setLegalName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   /**
@@ -118,6 +121,7 @@ export default function CommunityDetailPage({
       const detail = res.data as unknown as Detail;
       setData(detail);
       setAllowOrganizerFees(detail.organizerFeesEnabled);
+      setLegalName(detail.legalName ?? "");
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load this community");
@@ -135,6 +139,7 @@ export default function CommunityDetailPage({
         const detail = res.data as unknown as Detail;
         setData(detail);
         setAllowOrganizerFees(detail.organizerFeesEnabled);
+        setLegalName(detail.legalName ?? "");
         setSettled(true);
       },
       (e: unknown) => {
@@ -162,6 +167,11 @@ export default function CommunityDetailPage({
         // sending it would quietly flip a policy flag on a community that
         // cannot trade anyway.
         ...(decision === "approve" ? { organizerFeesEnabled: allowOrganizerFees } : {}),
+        // Likewise approval-only: the name on the document is a finding of
+        // the review, and settlement accounts are checked against it.
+        ...(decision === "approve" && legalName.trim()
+          ? { legalName: legalName.trim() }
+          : {}),
       });
       setDecision(null);
       setReason("");
@@ -527,6 +537,30 @@ export default function CommunityDetailPage({
 
               {decision && (
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  {decision === "approve" && (
+                    <div>
+                      <label
+                        htmlFor="review-legal-name"
+                        className="mb-1 block text-xs font-medium text-slate-600"
+                      >
+                        Name on the registration document
+                      </label>
+                      <input
+                        id="review-legal-name"
+                        type="text"
+                        value={legalName}
+                        onChange={(e) => setLegalName(e.target.value)}
+                        placeholder="Lagos Life Multipurpose Cooperative Society Ltd"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#012A9D] focus:outline-none"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Copy it exactly from the CAC or cooperative certificate. Settlement
+                        accounts must resolve to this name or the registered name, so a
+                        paraphrase here blocks a legitimate bank account later.
+                      </p>
+                    </div>
+                  )}
+
                   {decision === "approve" && (
                     <label className="flex items-start gap-2.5 text-[13px] text-slate-700">
                       <input

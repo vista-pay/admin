@@ -38,7 +38,13 @@ const OPEN_ROUTES = new Set(["settings", "change-password"]);
 /** Pages without their own sidebar tab borrow the permission of their area. */
 const ROUTE_ALIASES: Record<string, string> = {
   businesses: "users",
+  // The hub page over plans/subscribers/revenue. Gated like Communities —
+  // each card on it degrades by itself if the admin lacks the fees tab.
+  subscriptions: "communities",
   "community-plans": "fees",
+  "community-subscriptions": "communities",
+  "subscription-revenue": "fees",
+  "account-officers": "communities",
   limits: "limits",
   providers: "system-health",
   reports: "overview",
