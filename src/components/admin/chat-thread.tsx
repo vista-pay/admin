@@ -60,14 +60,14 @@ export function ChatThread({
 
   if (messages.length === 0 && emptyState) {
     return (
-      <div className={cn("flex flex-1 items-center justify-center p-8", className)}>
+      <div className={cn("flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-8", className)}>
         {emptyState}
       </div>
     );
   }
 
   return (
-    <div ref={scroller} className={cn("flex-1 space-y-2 overflow-y-auto px-4 py-4", className)}>
+    <div ref={scroller} className={cn("min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4", className)}>
       {messages.map((message, index) => {
         // Named once per run, not on every bubble: six messages back and
         // forth should read as two voices, not twelve labels.

@@ -264,7 +264,7 @@ export default function AccountOfficersPage() {
   const selected = thread ? rows.find((r) => r.communityId === thread.community.id) ?? null : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-[1400px] flex-1 flex-col p-4 sm:p-6 lg:p-8">
+    <main className="mx-auto flex h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-[1400px] flex-col overflow-hidden p-4 sm:p-6 lg:h-[calc(100dvh-4rem)] lg:p-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black">Account officers</h1>
@@ -308,7 +308,7 @@ export default function AccountOfficersPage() {
 
       {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
-      <div className="mt-5 grid min-h-[620px] flex-1 gap-4 lg:grid-cols-[360px_1fr]">
+      <div className="mt-5 grid min-h-0 flex-1 gap-4 lg:grid-cols-[360px_1fr]">
         {/* ── The queue ─────────────────────────────────────────────── */}
         <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="border-b border-slate-100 p-3">
