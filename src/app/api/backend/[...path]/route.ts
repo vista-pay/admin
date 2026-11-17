@@ -60,6 +60,11 @@ async function proxy(request: NextRequest, context: RouteContext) {
   headers.delete("connection");
   headers.delete("origin");
   headers.delete("referer");
+  // Which application this is, for the central activity stream. Overwritten
+  // rather than appended so a browser cannot name a different surface; the
+  // API narrows it against the credential anyway, and an admin cookie can
+  // only ever resolve to the console.
+  headers.set("X-Rendi-Surface", "ADMIN_CONSOLE");
 
   const method = request.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();

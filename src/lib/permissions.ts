@@ -19,6 +19,10 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   { key: "disputes", label: "Disputes", group: "Ajo oversight" },
   { key: "communities", label: "Communities", group: "Communities" },
   { key: "organizer-settlements", label: "Organizer settlements", group: "Communities" },
+  { key: "community-oversight", label: "Community dashboard & analytics", group: "Communities" },
+  { key: "community-members", label: "Community members & administrators", group: "Communities" },
+  { key: "community-finances", label: "Community contributions, Ajo, loans & transactions", group: "Communities" },
+  { key: "community-complaints", label: "Community complaints & disputes", group: "Communities" },
   { key: "growth", label: "Growth analytics", group: "Growth & marketing" },
   { key: "campaigns", label: "Campaigns", group: "Growth & marketing" },
   { key: "referrals", label: "Referrals & promos", group: "Growth & marketing" },
@@ -26,18 +30,44 @@ export const PERMISSION_CATALOG: PermissionDescriptor[] = [
   { key: "fees", label: "Pricing & fees", group: "Platform" },
   { key: "limits", label: "Transaction limits", group: "Platform" },
   { key: "feature-flags", label: "Feature flags", group: "Platform" },
-  { key: "broadcasts", label: "Platform updates", group: "Platform" },
   { key: "roles", label: "Roles & access", group: "Platform" },
   { key: "audit-logs", label: "Audit trail", group: "Platform" },
   { key: "system-health", label: "System health", group: "Platform" },
 ];
 
 /** Routes that exist outside the tab permissions and are open to any admin. */
-const OPEN_ROUTES = new Set(["settings", "change-password"]);
+const OPEN_ROUTES = new Set([
+  "settings",
+  "change-password",
+  // The approvals queue. Deliberately open: eligibility to *decide* a
+  // request is settled per request by the API (the approver must hold the
+  // action's own permission and match the policy's roles), and gating the
+  // whole page on one permission made the super admin the only possible
+  // approver of anything — which collapses maker-checker into one person.
+  "approvals",
+]);
+
+/**
+ * Tabs whose API routes are `@SuperAdminOnly()` rather than permission-gated.
+ *
+ * Kept separate from `PERMISSION_CATALOG` because they are not assignable:
+ * listing `broadcasts` there made it appear in the role editor as a
+ * permission an operator could grant, and granting it produced a tab that
+ * 403s on every call.
+ */
+const SUPER_ADMIN_ROUTES = new Set(["broadcasts"]);
 
 /** Pages without their own sidebar tab borrow the permission of their area. */
 const ROUTE_ALIASES: Record<string, string> = {
   businesses: "users",
+  // The central activity feed is the audit trail with provenance, so it is
+  // gated by the same permission as the audit trail.
+  activity: "audit-logs",
+  // The Community Management module. `community` covers the dashboard, the
+  // All Communities list and the per-community page; the member directory
+  // lives under it too and is gated per endpoint by the API, which holds the
+  // four community keys separately.
+  community: "community-oversight",
   // The hub page over plans/subscribers/revenue. Gated like Communities —
   // each card on it degrades by itself if the admin lacks the fees tab.
   subscriptions: "communities",
@@ -60,4 +90,9 @@ export function pathPermission(pathname: string): string | null {
   const alias = ROUTE_ALIASES[segment];
   if (alias) return alias;
   return PERMISSION_CATALOG.some((item) => item.key === segment) ? segment : null;
+}
+
+/** Whether a route is reachable only by the super admin. */
+export function isSuperAdminRoute(pathname: string): boolean {
+  return SUPER_ADMIN_ROUTES.has(pathname.split("/").filter(Boolean)[0] ?? "");
 }

@@ -57,7 +57,15 @@ export function useRealtimeEvent(
   enabled = true,
 ) {
   const handler = useRef(onEvent);
-  handler.current = onEvent;
+  // Updated in an effect, not during render. Writing `handler.current`
+  // inline reads as harmless and is not: a ref write during render happens
+  // before React has committed, so a render that is thrown away (a
+  // Suspense retry, StrictMode's double invocation, a concurrent
+  // interruption) leaves the ref pointing at a callback from a render the
+  // user never saw.
+  useEffect(() => {
+    handler.current = onEvent;
+  }, [onEvent]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -16,6 +16,59 @@ type ApiOptions = RequestInit & {
  * `SESSION_FLAG_COOKIE` is written by the API too, but carries no credential -
  * it is only a marker so the UI and the Next middleware know a session exists.
  */
+/**
+ * A failed call, with the API's machine-readable discriminator kept.
+ *
+ * It used to be a bare `Error` carrying only the message, which threw away
+ * the two fields that let a page *do* something about a failure: `code` and
+ * `details`. That mattered the moment maker-checker landed — a gated action
+ * answers 428 with `code: "ADMIN_APPROVAL_REQUIRED"` and a challenge naming
+ * the request it raised, and without those a page can only show the sentence
+ * and leave the operator to go hunting for the queue.
+ *
+ * `instanceof Error` still holds, so every existing `catch` that reads
+ * `.message` keeps working unchanged.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** e.g. "ADMIN_APPROVAL_REQUIRED", "APPROVAL_REQUIRED", "SESSION_EXPIRED". */
+    readonly code: string | null,
+    /** The API's `errors` payload — a challenge, a field map, whatever it sent. */
+    readonly details: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Shape the API sends with a 428 on a gated console action. */
+export type AdminApprovalChallenge = {
+  requestId: string;
+  reference: string;
+  actionKey: string;
+  actionName: string;
+  summary: string;
+  status: string;
+  approvals: { given: number; required: number };
+  approverRoles: string[];
+  amount: string | null;
+  currencyCode: string | null;
+  expiresAt: string | null;
+  raised: boolean;
+};
+
+/**
+ * The challenge, when a failure is "this needs a second administrator".
+ * Null for anything else, so a caller can branch in one line.
+ */
+export function approvalChallengeOf(error: unknown): AdminApprovalChallenge | null {
+  if (!(error instanceof ApiError)) return null;
+  if (error.code !== "ADMIN_APPROVAL_REQUIRED") return null;
+  return (error.details as AdminApprovalChallenge) ?? null;
+}
+
 export const SESSION_FLAG_COOKIE = "vista_admin_session";
 
 export function hasSessionFlag(): boolean {
@@ -132,7 +185,12 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const msg = json?.message ?? json?.error ?? `Request failed (${res.status})`;
-    throw new Error(Array.isArray(msg) ? msg.join(", ") : msg);
+    throw new ApiError(
+      Array.isArray(msg) ? msg.join(", ") : msg,
+      res.status,
+      typeof json?.code === "string" ? json.code : null,
+      json?.errors ?? null,
+    );
   }
 
   // Backend wraps in { success, data, meta }
@@ -141,6 +199,319 @@ export async function apiFetch<T>(
   }
   return { data: json as T };
 }
+
+/** One line in the central activity feed. */
+export type ActivityRow = {
+  id: string;
+  event: string;
+  category: "COMMUNITY" | "MEMBER" | "MONEY" | "ADMIN" | "SECURITY" | "SYSTEM" | "SUPPORT";
+  /** Which application the action came from. The column no other table has. */
+  surface:
+    | "MOBILE_APP"
+    | "COMMUNITY_PORTAL"
+    | "BUSINESS_PORTAL"
+    | "PAY"
+    | "ADMIN_CONSOLE"
+    | "SYSTEM"
+    | "WEBHOOK"
+    | "UNKNOWN";
+  severity: "INFO" | "NOTICE" | "WARNING" | "CRITICAL";
+  outcome: "SUCCESS" | "FAILED";
+  actorType: string;
+  actorLabel: string | null;
+  summary: string;
+  reason: string | null;
+  targetType: string;
+  targetId: string | null;
+  communityId: string | null;
+  community: { id: string; publicId: string | null; name: string } | null;
+  /** Decimal string, or null on anything that is not a money event. */
+  amount: string | null;
+  currencyCode: string | null;
+  transactionReference: string | null;
+  /** The APV reference that authorised this, where one did. */
+  approvalRequestId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  deviceId: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
+export type ActivityPage = {
+  items: ActivityRow[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export type ActivitySummary = {
+  windowHours: number;
+  since: string;
+  total: number;
+  failures: number;
+  byCategory: Record<string, number>;
+  bySeverity: Record<string, number>;
+  bySurface: Record<string, number>;
+};
+
+/** A console action waiting for a second administrator. */
+export type ApprovalRequest = {
+  id: string;
+  reference: string;
+  actionKey: string;
+  actionName: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXECUTED" | "CANCELLED" | "EXPIRED";
+  summary: string;
+  reason: string;
+  targetEntity: string;
+  targetId: string | null;
+  payload: Record<string, unknown>;
+  amount: string | null;
+  currencyCode: string | null;
+  approvals: { given: number; required: number };
+  approverRoles: string[];
+  requestedBy: { id: string; firstName: string; lastName: string; email: string };
+  decisions: Array<{
+    id: string;
+    approve: boolean;
+    reason: string;
+    roleKey: string;
+    /** The super admin deciding their own. Flagged, never hidden. */
+    selfApproved: boolean;
+    createdAt: string;
+    admin: { id: string; firstName: string; lastName: string; email: string };
+  }>;
+  executionReference: string | null;
+  /** Approved but the action would not run. Not the same as never approved. */
+  executionError: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+};
+
+export type ApprovalRequestPage = {
+  items: ApprovalRequest[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+/** A gateable action, with the policy in force for it. */
+export type ApprovalAction = {
+  key: string;
+  name: string;
+  description: string;
+  targetEntity: string;
+  permission: string;
+  defaultMakerChecker: boolean;
+  policy: {
+    id: string;
+    makerCheckerRequired: boolean;
+    minimumApprovers: number;
+    approverRoles: string[];
+    amountThreshold: string | null;
+    currencyCode: string | null;
+    isActive: boolean;
+    updatedBy: string;
+    updatedAt: string;
+  } | null;
+  /** Would this action actually be stopped right now? */
+  enforced: boolean;
+};
+
+// ── Community Management module ──────────────────────────────────────────
+
+export type CommunityStatusValue = "PENDING" | "VERIFIED" | "SUSPENDED" | "REJECTED" | "INACTIVE";
+export type VerificationLevel = "PENDING" | "BASIC" | "FULL";
+export type CommunityCategoryValue =
+  | "COOPERATIVE"
+  | "AJO_THRIFT"
+  | "STAFF_COOPERATIVE"
+  | "TRADE_ASSOCIATION"
+  | "OTHER_COMMUNITY";
+
+/** The five filters the dashboard and the All Communities list share. */
+export type CommunityFilters = {
+  from?: string;
+  to?: string;
+  state?: string;
+  lga?: string;
+  category?: string;
+  status?: string;
+  verification?: string;
+  search?: string;
+};
+
+export type CommunityDashboard = {
+  communities: {
+    total: number;
+    active: number;
+    pendingApproval: number;
+    suspended: number;
+    inactive: number;
+    rejected: number;
+  };
+  members: { total: number };
+  registrations: { today: number; last7Days: number; last30Days: number };
+  ajo: { activeGroups: number; ongoingCycles: number };
+  contributions: {
+    collected: string;
+    payments: number;
+    expected: string;
+    actual: string;
+    /** Null when nothing is due — a rate with no denominator, not 0%. */
+    collectionRate: number | null;
+    shortfall: string;
+  };
+  savings: { balance: string; accounts: number };
+  loans: { running: number; outstanding: string; overdue: number };
+  support: { openComplaints: number; openDisputes: number };
+  revenue: { subscriptionsPaid: string };
+  attention: {
+    overdueContributions: Array<{
+      id: string;
+      publicId: string | null;
+      name: string;
+      state: string | null;
+      lga: string | null;
+      overdueCount: number;
+      shortfall: string;
+      capped: boolean;
+    }>;
+  };
+};
+
+/** Contributions expected against collected, per day. */
+export type CommunityTrends = {
+  periodDays: number;
+  series: Array<{ date: string; expectedNgn: number; collectedNgn: number; registrations: number }>;
+  totals: { expected: string; collected: string; registrations: number };
+};
+
+export type CommunityRow = {
+  id: string;
+  publicId: string | null;
+  name: string;
+  status: CommunityStatusValue;
+  verificationLevel: VerificationLevel;
+  categoryType: CommunityCategoryValue | null;
+  category: string | null;
+  state: string | null;
+  lga: string | null;
+  city: string | null;
+  country: string;
+  registrationNumber: string | null;
+  healthScore: number | null;
+  healthScoredAt: string | null;
+  suspensionReason: string | null;
+  rejectionReason: string | null;
+  suspendedAt: string | null;
+  deactivatedAt: string | null;
+  createdAt: string;
+  owner: { email: string; phone: string };
+  subscription: { status: string; plan: { code: string; name: string } } | null;
+  _count: { members: number; ajoGroups: number };
+};
+
+export type CommunityFilterOptions = {
+  states: string[];
+  lgas: Array<{ lga: string; state: string | null }>;
+  categories: Array<{ category: string; communities: number }>;
+  uncategorised: number;
+};
+
+export type DirectoryMember = {
+  id: string;
+  memberCode: string | null;
+  status: string;
+  title: string | null;
+  joinedAt: string;
+  suspendedScopes: string[];
+  suspensionReason: string | null;
+  adminAccessSuspendedAt: string | null;
+  adminAccessSuspensionReason: string | null;
+  role: { name: string; label: string | null };
+  community: { id: string; publicId: string | null; name: string; status: string; state: string | null; lga: string | null };
+  user: {
+    id: string;
+    email: string;
+    phone: string;
+    vistaTag: string | null;
+    status: string;
+    createdAt: string;
+    profile: { firstName: string; lastName: string } | null;
+    kycRecord: { tier: string; status: string } | null;
+  };
+  name: string;
+  /** How many communities this person belongs to, platform-wide. */
+  communityCount: number;
+  isOfficer: boolean;
+};
+
+/** One person, everywhere they are. */
+export type MemberProfile = {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+    vistaTag: string | null;
+    userType: string;
+    status: string;
+    createdAt: string;
+    kycRecord: { tier: string; status: string; reviewedAt: string | null } | null;
+    wallet: { walletNumber: string; accounts: Array<{ currencyCode: string; available: string; held: string }> } | null;
+  };
+  memberships: Array<{
+    id: string;
+    memberCode: string | null;
+    status: string;
+    title: string | null;
+    joinedAt: string;
+    suspendedScopes: string[];
+    suspensionReason: string | null;
+    adminAccessSuspendedAt: string | null;
+    adminAccessSuspensionReason: string | null;
+    role: { name: string; label: string | null };
+    community: { id: string; publicId: string | null; name: string; status: string; state: string | null; lga: string | null };
+    isOfficer: boolean;
+  }>;
+  contributions: { paid: string; payments: number };
+  savings: { balance: string; accounts: number };
+  loans: Array<{
+    id: string;
+    loanReference: string;
+    status: string;
+    principal: string;
+    totalRepayable: string;
+    amountRepaid: string;
+    outstanding: string;
+    currencyCode: string;
+    dueDate: string | null;
+    communityId: string | null;
+  }>;
+  complaints: Array<{
+    id: string;
+    reference: string;
+    subject: string;
+    status: string;
+    complaintType: string | null;
+    communityId: string | null;
+    lastActivityAt: string;
+  }>;
+  /** Accounts that look like this one. Leads to investigate, never findings. */
+  duplicateLeads: Array<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+    status: string;
+    createdAt: string;
+    matchedOn: string[];
+  }>;
+};
 
 export type AdminProfile = {
   id: string;
@@ -375,6 +746,173 @@ export const adminApi = {
     },
   ) =>
     apiFetch<unknown>(`/admin/communities/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Request more verification evidence from the community's owner. */
+  requestCommunityDocument: (id: string, body: { documentType: string; note?: string }) =>
+    apiFetch<unknown>(`/admin/communities/${id}/request-document`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // ── Community Management module ──────────────────────────────────────
+  communityDashboard: (filters: CommunityFilters) =>
+    apiFetch<CommunityDashboard>("/admin/community-oversight/dashboard", {
+      params: filters as Record<string, string | number | boolean | undefined>,
+    }),
+  communityTrends: (filters: CommunityFilters, days?: number) =>
+    apiFetch<CommunityTrends>("/admin/community-oversight/trends", {
+      params: { ...filters, days } as Record<string, string | number | boolean | undefined>,
+    }),
+  communityDirectory: (params: CommunityFilters & { page?: number; limit?: number; sort?: string }) =>
+    apiFetch<{ items: CommunityRow[]; total: number; page: number; limit: number; totalPages: number }>(
+      "/admin/community-oversight/communities",
+      { params: params as Record<string, string | number | boolean | undefined> },
+    ),
+  communityFilterOptions: () =>
+    apiFetch<CommunityFilterOptions>("/admin/community-oversight/filters"),
+  memberDirectory: (params: { q?: string; communityId?: string; view?: string; page?: number; limit?: number }) =>
+    apiFetch<{ items: DirectoryMember[]; total: number; page: number; limit: number; totalPages: number }>(
+      "/admin/community-oversight/members",
+      { params: params as Record<string, string | number | boolean | undefined> },
+    ),
+  memberProfile: (userId: string) =>
+    apiFetch<MemberProfile>(`/admin/community-oversight/members/${userId}`),
+
+  // One method per tab of the per-community page. Typed loosely on purpose:
+  // each tab's shape is large, read-only and rendered once, so mirroring it
+  // here would be a second schema to keep in step for no checking that the
+  // page does not already do at the point of use.
+  communityTab: <T = unknown>(
+    id: string,
+    tab:
+      | "overview"
+      | "membership"
+      | "administrators"
+      | "contributions"
+      | "savings"
+      | "ajo"
+      | "loans"
+      | "transactions"
+      | "complaints"
+      | "audit"
+      | "settings",
+    params?: Record<string, string | number | boolean | undefined>,
+  ) => apiFetch<T>(`/admin/communities/${id}/${tab}`, { params }),
+
+  // ── Community platform status ────────────────────────────────────────
+  // These bite immediately: the API checks a community's status on every
+  // portal and mobile call, so a decision here is in force on the affected
+  // members' next request rather than at their next sign-in. Each may answer
+  // 428 when its approval policy requires a second administrator — see
+  // `approvalChallengeOf`.
+  suspendCommunity: (id: string, reason: string) =>
+    apiFetch<unknown>(`/admin/communities/${id}/suspend`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  deactivateCommunity: (id: string, reason: string) =>
+    apiFetch<unknown>(`/admin/communities/${id}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  reactivateCommunity: (id: string, reason: string) =>
+    apiFetch<unknown>(`/admin/communities/${id}/reactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  /** Pending / Basic / Full. Independent of the lifecycle status. */
+  setCommunityVerificationLevel: (
+    id: string,
+    body: { level: "PENDING" | "BASIC" | "FULL"; reason: string; legalName?: string },
+  ) =>
+    apiFetch<unknown>(`/admin/communities/${id}/verification-level`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  setCommunityCategory: (id: string, body: { categoryType: string; reason?: string }) =>
+    apiFetch<unknown>(`/admin/communities/${id}/category`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  /**
+   * Pause an officer's powers without touching their membership or their
+   * post — they keep both, only the actions the post carries stop.
+   */
+  suspendCommunityAdministrator: (id: string, memberId: string, reason: string) =>
+    apiFetch<unknown>(`/admin/communities/${id}/administrators/${memberId}/suspend`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  restoreCommunityAdministrator: (id: string, memberId: string, reason: string) =>
+    apiFetch<unknown>(`/admin/communities/${id}/administrators/${memberId}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+
+  // ── Central activity feed ────────────────────────────────────────────
+  // Everything that happened across the mobile app, the community portal,
+  // the business and pay surfaces and this console — including which of them
+  // it came from. The socket event `activity.created` carries only an id, a
+  // category and a severity; the content comes from here, where the
+  // permission guards apply.
+  activity: (params: {
+    page?: number;
+    limit?: number;
+    category?: string;
+    severity?: string;
+    surface?: string;
+    outcome?: string;
+    event?: string;
+    communityId?: string;
+    actorUserId?: string;
+    actorAdminId?: string;
+    from?: string;
+    to?: string;
+    search?: string;
+  }) =>
+    apiFetch<ActivityPage>("/admin/activity", {
+      params: params as Record<string, string | number | boolean | undefined>,
+    }),
+  activitySummary: (hours?: number) =>
+    apiFetch<ActivitySummary>("/admin/activity/summary", { params: { hours } }),
+
+  // ── Maker-checker on console actions ─────────────────────────────────
+  approvalRequests: (params: { status?: string; actionKey?: string; mine?: boolean; page?: number; limit?: number }) =>
+    apiFetch<ApprovalRequestPage>("/admin/approval-requests", {
+      params: {
+        ...params,
+        mine: params.mine ? "true" : undefined,
+      } as Record<string, string | number | boolean | undefined>,
+    }),
+  approvalRequest: (id: string) => apiFetch<ApprovalRequest>(`/admin/approval-requests/${id}`),
+  /** Which actions can be gated, and whether each is gated right now. */
+  approvalCatalogue: () => apiFetch<ApprovalAction[]>("/admin/approval-requests/catalogue"),
+  decideApproval: (id: string, body: { approve: boolean; reason: string }) =>
+    apiFetch<ApprovalRequest>(`/admin/approval-requests/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  cancelApproval: (id: string, reason: string) =>
+    apiFetch<ApprovalRequest>(`/admin/approval-requests/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  upsertApprovalPolicy: (body: {
+    actionKey: string;
+    name: string;
+    description?: string;
+    makerCheckerRequired: boolean;
+    minimumApprovers: number;
+    approverRoles: string[];
+    amountThreshold?: string;
+    currencyCode?: string;
+    isActive: boolean;
+    reason: string;
+  }) =>
+    apiFetch<unknown>("/admin/approval-policies", {
       method: "POST",
       body: JSON.stringify(body),
     }),

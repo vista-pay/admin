@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { adminApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { pathPermission } from "@/lib/permissions";
+import { isSuperAdminRoute, pathPermission } from "@/lib/permissions";
 import { useAdminSession } from "@/components/providers/session-provider";
 
 type NavChild = { label: string; href: string; badgeKey?: string };
@@ -15,7 +15,10 @@ type NavGroup = { label: string; items: NavItem[] };
 const NAV: NavGroup[] = [
   { label: "Overview", items: [
     { label: "Command center", href: "/overview", icon: "⌂" },
-    { label: "Account officers", href: "/account-officers", icon: "☏" },
+    // The live feed of everything, from every app. Above the queues on
+    // purpose: it is the answer to "what is happening right now".
+    { label: "Activity", href: "/activity", icon: "◉" },
+    { label: "Approvals", href: "/approvals", icon: "⎘", badgeKey: "approvals" },
   ] },
   { label: "Money & risk", items: [
     { label: "Transactions", href: "/transactions", icon: "▤" },
@@ -27,23 +30,39 @@ const NAV: NavGroup[] = [
     { label: "KYC reviews", href: "/kyc", icon: "✓", badgeKey: "kyc" },
     { label: "Businesses", href: "/businesses", icon: "▣" },
   ] },
-  { label: "Ajo oversight", items: [
-    { label: "Ajo groups", href: "/ajo-groups", icon: "◌" },
-    { label: "Draw audits", href: "/draw-audits", icon: "⤨" },
-    { label: "Payout approvals", href: "/payout-approvals", icon: "□", badgeKey: "payout-approvals" },
-    { label: "Disputes", href: "/disputes", icon: "▱", badgeKey: "disputes" },
-  ] },
-  { label: "Communities", items: [
-    { label: "Communities", href: "/communities", icon: "♜", badgeKey: "communities" },
-    // A dropdown because the tier definitions, who is on which tier, and
-    // what the tiers bring in are three different jobs — and the parent link
-    // opens a hub page that says so, with the numbers and a button into each.
-    { label: "Subscriptions", href: "/subscriptions", icon: "₦", children: [
+  // One group for community work, in the order the brief asks for it. The
+  // Ajo, disputes and subscription tabs that used to sit in their own groups
+  // are folded in here rather than duplicated: an operator looking after
+  // cooperatives should not have to know that payout approvals live
+  // somewhere else.
+  //
+  // Two items from the brief are deliberately absent until their backend
+  // exists — Community Analytics and Reports & Exports. A menu entry that
+  // opens nothing is worse than one that is not there yet.
+  { label: "Community management", items: [
+    // The four community surfaces under one parent. The parent opens the
+    // dashboard, which is the overview the other three are reached from
+    // anyway — so the row is a destination rather than a chevron that only
+    // exists to be clicked.
+    { label: "Communities", href: "/community/dashboard", icon: "♜", badgeKey: "communities", children: [
+      { label: "Community dashboard", href: "/community/dashboard" },
+      { label: "All communities", href: "/community/all" },
+      { label: "Registration & approvals", href: "/communities", badgeKey: "communities" },
+      { label: "Member management", href: "/community/members" },
+    ] },
+    { label: "Contributions & Ajo", href: "/ajo-groups", icon: "◌", children: [
+      { label: "Ajo groups", href: "/ajo-groups" },
+      { label: "Draw audits", href: "/draw-audits" },
+      { label: "Payout approvals", href: "/payout-approvals", badgeKey: "payout-approvals" },
+      { label: "Organizer settlements", href: "/organizer-settlements" },
+    ] },
+    { label: "Subscriptions & billing", href: "/subscriptions", icon: "₦", children: [
       { label: "Plans", href: "/community-plans" },
       { label: "Subscribers", href: "/community-subscriptions" },
       { label: "Revenue", href: "/subscription-revenue" },
     ] },
-    { label: "Organizer settlements", href: "/organizer-settlements", icon: "%" },
+    { label: "Complaints & disputes", href: "/disputes", icon: "▱", badgeKey: "disputes" },
+    { label: "Account officers", href: "/account-officers", icon: "☏" },
   ] },
   { label: "Growth & marketing", items: [
     { label: "Growth analytics", href: "/growth", icon: "⌁" },
@@ -72,16 +91,18 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   // vanish. A dropdown is filtered child by child — its children can map to
   // different permissions — and survives only while something remains, with
   // its link pointing at the first child the admin may actually open.
+  const visible = (href: string) =>
+    isSuperAdminRoute(href) ? Boolean(profile?.isSuperAdmin) : can(pathPermission(href));
   const nav = NAV.map((group) => ({
     ...group,
     items: group.items
       .map((item) => {
-        if (!item.children) return can(pathPermission(item.href)) ? item : null;
-        const children = item.children.filter((child) => can(pathPermission(child.href)));
+        if (!item.children) return visible(item.href) ? item : null;
+        const children = item.children.filter((child) => visible(child.href));
         if (!children.length) return null;
         // The parent keeps its own page (the hub) when the admin may open
         // it; otherwise it falls back to the first child they may.
-        return { ...item, children, href: can(pathPermission(item.href)) ? item.href : children[0].href };
+        return { ...item, children, href: visible(item.href) ? item.href : children[0].href };
       })
       .filter((item): item is NavItem => item !== null),
   })).filter((group) => group.items.length > 0);
