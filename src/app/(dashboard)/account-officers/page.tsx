@@ -11,7 +11,8 @@
  * community with messages and no officer is the overdue assignment.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { adminApi } from "@/lib/api";
 import { AdminSelect } from "@/components/ui/admin-select";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,16 @@ const initials = (name: string) =>
     .toUpperCase();
 
 export default function AccountOfficersPage() {
+  return (
+    <Suspense fallback={null}>
+      <AccountOfficers />
+    </Suspense>
+  );
+}
+
+function AccountOfficers() {
+  // The header inbox links straight at one community's conversation.
+  const openFor = useSearchParams().get("community");
   const [rows, setRows] = useState<OfficerRow[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [error, setError] = useState("");
@@ -97,7 +108,11 @@ export default function AccountOfficersPage() {
   // The listener is registered once; without a ref it would close over the
   // thread that was open when it was created.
   const threadRef = useRef<Thread | null>(null);
-  threadRef.current = thread;
+  // Written after commit rather than during render: the listener only ever
+  // reads it from an event that arrives later.
+  useEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
 
   const load = useCallback(async () => {
     try {
@@ -235,6 +250,17 @@ export default function AccountOfficersPage() {
    * worked top-down, and a community waiting three days should not sit below
    * one that was answered an hour ago.
    */
+  useEffect(() => {
+    if (!openFor || thread) return;
+    const row = rows.find((candidate) => candidate.communityId === openFor);
+    // Settles before it writes, like every other fetch on this screen.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (row) void openThread(row);
+    // `openThread` is declared below and stable for this purpose; re-running
+    // on every render would reopen a thread the admin just closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openFor, rows, thread]);
+
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
     return rows
@@ -264,16 +290,22 @@ export default function AccountOfficersPage() {
   const selected = thread ? rows.find((r) => r.communityId === thread.community.id) ?? null : null;
 
   return (
-    <main className="mx-auto flex h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-[1400px] flex-col overflow-hidden p-4 sm:p-6 lg:h-[calc(100dvh-4rem)] lg:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black">Account officers</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Communities whose plan includes dedicated support, the admin who covers each one, and
-            the conversation with them.
+    /* Every pixel this frame spends on itself comes out of the conversation,
+       which is the only thing on the page anyone came to read. Hence a single
+       compact bar rather than a title block over a row of stat cards: those
+       cost around 110px of height and said what the filters already say. */
+    <main className="mx-auto flex h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-[1500px] flex-col overflow-hidden p-3 sm:p-4 lg:h-[calc(100dvh-4rem)] lg:px-6 lg:py-4">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h1 className="text-xl font-black">Account officers</h1>
+          <p className="hidden truncate text-xs text-slate-500 sm:block">
+            Communities on a plan with dedicated support
           </p>
         </div>
-        <div className="flex gap-2">
+
+        {/* The counts are the filters. Two controls that said the same thing
+            was one too many, and the segmented form reads as a choice. */}
+        <div className="flex shrink-0 rounded-xl border border-slate-200 bg-white p-0.5">
           {(
             [
               ["Entitled", rows.length, "ALL"],
@@ -284,23 +316,27 @@ export default function AccountOfficersPage() {
             <button
               key={key}
               onClick={() => setFilter(key)}
+              aria-pressed={filter === key}
               className={cn(
-                "min-w-[116px] rounded-2xl border px-4 py-2.5 text-left transition-colors",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors",
                 filter === key
-                  ? "border-[#012A9D] bg-[#012A9D]/5"
-                  : "border-slate-200 bg-white hover:border-slate-300",
+                  ? "bg-[#012A9D] text-white"
+                  : "text-slate-600 hover:bg-slate-100",
               )}
             >
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-              <p
+              {label}
+              <span
                 className={cn(
-                  "mt-0.5 text-xl font-black",
-                  key === "WAITING" && value > 0 && "text-amber-600",
-                  key === "UNASSIGNED" && value > 0 && "text-amber-600",
+                  "rounded-md px-1.5 py-0.5 text-[11px] font-black tabular-nums",
+                  filter === key
+                    ? "bg-white/20 text-white"
+                    : value > 0 && key !== "ALL"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-slate-100 text-slate-600",
                 )}
               >
                 {value}
-              </p>
+              </span>
             </button>
           ))}
         </div>
@@ -308,9 +344,18 @@ export default function AccountOfficersPage() {
 
       {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
-      <div className="mt-5 grid min-h-0 flex-1 gap-4 lg:grid-cols-[360px_1fr]">
+      {/* Below lg there is not enough width for both panes, and stacking them
+          inside a fixed-height frame gave each half a screen — which is how a
+          chat ended up six lines tall. One at a time instead, the way every
+          mail client narrows. */}
+      <div className="mt-3 grid min-h-0 flex-1 gap-3 lg:grid-cols-[340px_1fr]">
         {/* ── The queue ─────────────────────────────────────────────── */}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <section
+          className={cn(
+            "min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white",
+            thread ? "hidden lg:flex" : "flex",
+          )}
+        >
           <div className="border-b border-slate-100 p-3">
             <input
               value={search}
@@ -383,26 +428,49 @@ export default function AccountOfficersPage() {
         </section>
 
         {/* ── The conversation ──────────────────────────────────────── */}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60">
+        <section
+          className={cn(
+            "min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60",
+            thread ? "flex" : "hidden lg:flex",
+          )}
+        >
           {thread ? (
             <>
-              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-white px-5 py-3.5">
-                <div className="min-w-0">
-                  <p className="truncate font-bold text-slate-900">{thread.community.name}</p>
-                  <p className="truncate text-xs text-slate-500">
+              <header className="flex items-center gap-3 border-b border-slate-100 bg-white px-3 py-2.5 sm:px-4">
+                {/* The only way back to the queue once it is off-screen. */}
+                <button
+                  type="button"
+                  onClick={() => setThread(null)}
+                  aria-label="Back to communities"
+                  className="-ml-1 shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+                >
+                  ‹
+                </button>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-900">
+                    {thread.community.name}
+                  </p>
+                  <p className="truncate text-[11px] text-slate-500">
                     {thread.officer ? (
                       <>Covered by {thread.officer.name}</>
                     ) : (
                       <span className="text-amber-700">
-                        No officer assigned — replies here still reach the community
+                        Unassigned — replies here still reach them
                       </span>
                     )}
-                    {selected && <> · {selected.memberCount} members · {selected.email}</>}
+                    {selected && <> · {selected.memberCount} members</>}
                   </p>
                 </div>
+
                 {selected && (
-                  <Button variant="outline" size="sm" onClick={() => openAssign(selected)}>
-                    {selected.officer ? "Reassign" : "Assign officer"}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => openAssign(selected)}
+                  >
+                    {selected.officer ? "Reassign" : "Assign"}
                   </Button>
                 )}
               </header>
@@ -425,7 +493,7 @@ export default function AccountOfficersPage() {
                 }
               />
 
-              <div className="border-t border-slate-100 bg-white p-3">
+              <div className="border-t border-slate-100 bg-white p-2.5">
                 {pending.length > 0 && (
                   <ul className="mb-2.5 flex flex-wrap gap-2">
                     {pending.map((file) => (
@@ -481,7 +549,7 @@ export default function AccountOfficersPage() {
                     onChange={(e) => setDraft(e.target.value)}
                     rows={2}
                     placeholder={`Reply to ${thread.community.name}…`}
-                    className="flex-1 resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none transition focus:border-[#012A9D]"
+                    className="max-h-32 min-h-[2.75rem] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#012A9D]"
                   />
                   <Button
                     type="submit"

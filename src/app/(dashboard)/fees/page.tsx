@@ -65,6 +65,16 @@ const FALLBACK_TYPES = [
   "MERCHANT_SETTLEMENT",
 ];
 
+/**
+ * Hidden from this screen: the products are not ones the business is pricing
+ * today, so their rows were noise an operator had to read past every visit.
+ *
+ * This is a console-only filter. Any rule stored against these types is still
+ * live in the engine and still charged — delete an entry here to bring the
+ * type back into the table, the history and the "New fee rule" list.
+ */
+const HIDDEN_TYPES = ["FX_CONVERSION", "INTERNATIONAL_TRANSFER"];
+
 const pretty = (value: string) =>
   value.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -109,6 +119,17 @@ function feeOn(amount: number, form: Form) {
   if (max !== null && !Number.isNaN(max) && fee > max) fee = max;
   return fee;
 }
+
+/** The ₦10,000 column and the mobile card both want this. */
+const previewOf = (rule: Rule) =>
+  feeOn(10000, {
+    ...BLANK,
+    feeType: rule.feeType,
+    flatAmount: rule.flatAmount,
+    percent: toPercent(rule.percentageRate),
+    minFee: rule.minFee,
+    maxFee: rule.maxFee ?? "",
+  });
 
 const PREVIEW_AMOUNTS = [1000, 10000, 100000, 1000000];
 
@@ -160,13 +181,31 @@ export default function FeesPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const types = data?.chargeableTypes?.length ? data.chargeableTypes : FALLBACK_TYPES;
-  const rules = useMemo(() => data?.items ?? [], [data]);
+  const types = useMemo(() => {
+    const all = data?.chargeableTypes?.length ? data.chargeableTypes : FALLBACK_TYPES;
+    return all.filter((type) => !HIDDEN_TYPES.includes(type));
+  }, [data]);
+
+  const rules = useMemo(
+    () => (data?.items ?? []).filter((rule) => !HIDDEN_TYPES.includes(rule.transactionType)),
+    [data],
+  );
 
   /** Chargeable types with no rule at all: those transactions are free today. */
   const uncovered = useMemo(
     () => types.filter((type) => !rules.some((rule) => rule.transactionType === type)),
     [types, rules],
+  );
+
+  const liveCount = rules.filter((rule) => rule.isActive).length;
+
+  const historyRows = useMemo(
+    () =>
+      (data?.history ?? []).filter((log) => {
+        const type = (log.newValues as Record<string, unknown> | null)?.transactionType;
+        return typeof type === "string" ? !HIDDEN_TYPES.includes(type) : true;
+      }),
+    [data],
   );
 
   function openNew() {
@@ -189,6 +228,11 @@ export default function FeesPage() {
     });
   }
 
+  function closeEditor() {
+    setEditing(null);
+    setEditingId(null);
+  }
+
   async function submit() {
     if (!editing || editing.reason.trim().length < 5) return;
     setBusy(true);
@@ -208,8 +252,7 @@ export default function FeesPage() {
         }),
       });
       setToast("Fee rule saved. It applies to new transactions from now.");
-      setEditing(null);
-      setEditingId(null);
+      closeEditor();
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Fee update failed");
@@ -251,25 +294,32 @@ export default function FeesPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1500px] flex-1 p-4 sm:p-6 lg:p-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-slate-950">Pricing &amp; fees</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+    <main className="mx-auto w-full max-w-[1400px] flex-1 p-4 sm:p-6 lg:p-8">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-black text-slate-950 sm:text-2xl">Pricing &amp; fees</h1>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-slate-600">
             What Rendi charges on each transaction type. A saved change is live immediately for new
             transactions, reason-gated, and recorded against you in the audit trail.
           </p>
+          {rules.length > 0 && (
+            <p className="mt-2 text-xs font-semibold text-slate-500">
+              {rules.length} rule{rules.length === 1 ? "" : "s"} · {liveCount} live ·{" "}
+              {rules.length - liveCount} paused
+            </p>
+          )}
         </div>
-        <div className="flex shrink-0 gap-2">
+        {/* Full-width and stacked on a phone, inline from `sm` up. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
           <button
             onClick={() => setHistory(true)}
-            className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700"
+            className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
           >
             Change history
           </button>
           <button
             onClick={openNew}
-            className="h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white"
+            className="h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
           >
             New fee rule
           </button>
@@ -282,74 +332,61 @@ export default function FeesPage() {
         </p>
       )}
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-bold">Transaction</th>
-                <th className="px-4 py-3 font-bold">Model</th>
-                <th className="px-4 py-3 font-bold">What it charges</th>
-                <th className="px-4 py-3 text-right font-bold">Fee on ₦10,000</th>
-                <th className="px-4 py-3 font-bold">Status</th>
-                <th className="px-4 py-3 font-bold">Last changed</th>
-                <th className="px-4 py-3" />
+      {/* Two presentations of the same rules: a table where there is room for
+          one, and a stack of cards where there is not. Neither scrolls
+          sideways — a fee you have to drag into view is a fee nobody checks. */}
+      <section className="mt-5 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white lg:block">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3 font-bold">Transaction</th>
+              <th className="px-4 py-3 font-bold">Model</th>
+              <th className="px-4 py-3 font-bold">What it charges</th>
+              <th className="px-4 py-3 text-right font-bold">Fee on ₦10,000</th>
+              <th className="px-4 py-3 font-bold">Status</th>
+              <th className="hidden px-4 py-3 font-bold xl:table-cell">Last changed</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map((rule) => (
+              <tr key={rule.id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                <td className="px-4 py-3">
+                  <p className="font-bold text-slate-900">{pretty(rule.transactionType)}</p>
+                  <p className="text-xs text-slate-500">{rule.currencyCode}</p>
+                </td>
+                <td className="px-4 py-3 text-xs font-semibold text-slate-600">
+                  {pretty(rule.feeType)}
+                </td>
+                <td className="px-4 py-3 font-semibold text-slate-800">{ruleText(rule)}</td>
+                <td className="px-4 py-3 text-right font-bold tabular-nums text-slate-900">
+                  {rule.isActive ? formatCurrency(previewOf(rule), rule.currencyCode) : "—"}
+                </td>
+                <td className="px-4 py-3">
+                  <StatusPill active={rule.isActive} />
+                </td>
+                <td className="hidden px-4 py-3 text-xs text-slate-500 xl:table-cell">
+                  {formatDate(rule.updatedAt, { timeStyle: undefined })}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <button
+                    onClick={() => openEdit(rule)}
+                    className="font-bold text-blue-600 hover:underline"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => void togglePaused(rule)}
+                    className="ml-3 font-bold text-slate-500 hover:underline disabled:opacity-40"
+                  >
+                    {rule.isActive ? "Pause" : "Resume"}
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {rules.map((rule) => {
-                const preview = feeOn(10000, {
-                  ...BLANK,
-                  feeType: rule.feeType,
-                  flatAmount: rule.flatAmount,
-                  percent: toPercent(rule.percentageRate),
-                  minFee: rule.minFee,
-                  maxFee: rule.maxFee ?? "",
-                });
-                return (
-                  <tr key={rule.id} className="border-t border-slate-100 hover:bg-slate-50/60">
-                    <td className="px-4 py-3">
-                      <p className="font-bold text-slate-900">{pretty(rule.transactionType)}</p>
-                      <p className="text-xs text-slate-500">{rule.currencyCode}</p>
-                    </td>
-                    <td className="px-4 py-3 text-xs font-semibold text-slate-600">
-                      {pretty(rule.feeType)}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{ruleText(rule)}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-900">
-                      {rule.isActive ? formatCurrency(preview, rule.currencyCode) : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-1 text-[11px] font-bold ${rule.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
-                      >
-                        {rule.isActive ? "Live" : "Paused — free"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
-                      {formatDate(rule.updatedAt, { timeStyle: undefined })}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => openEdit(rule)}
-                        className="font-bold text-blue-600 hover:underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() => void togglePaused(rule)}
-                        className="ml-3 font-bold text-slate-500 hover:underline disabled:opacity-40"
-                      >
-                        {rule.isActive ? "Pause" : "Resume"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
         {!rules.length && (
           <p className="p-10 text-center text-sm text-slate-500">
             No fee rules configured — every transaction is currently free.
@@ -357,8 +394,64 @@ export default function FeesPage() {
         )}
       </section>
 
+      <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:hidden">
+        {rules.map((rule) => (
+          <article
+            key={rule.id}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate font-bold text-slate-900">
+                  {pretty(rule.transactionType)}
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {rule.currencyCode} · {pretty(rule.feeType)}
+                </p>
+              </div>
+              <StatusPill active={rule.isActive} />
+            </div>
+
+            <p className="mt-3 font-semibold text-slate-800">{ruleText(rule)}</p>
+
+            <div className="mt-3 flex items-baseline justify-between border-t border-slate-100 pt-3">
+              <span className="text-xs text-slate-500">Fee on ₦10,000</span>
+              <span className="font-bold tabular-nums text-slate-900">
+                {rule.isActive ? formatCurrency(previewOf(rule), rule.currencyCode) : "—"}
+              </span>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-400">
+                {formatDate(rule.updatedAt, { timeStyle: undefined })}
+              </span>
+              <span className="flex gap-2">
+                <button
+                  disabled={busy}
+                  onClick={() => void togglePaused(rule)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 disabled:opacity-40"
+                >
+                  {rule.isActive ? "Pause" : "Resume"}
+                </button>
+                <button
+                  onClick={() => openEdit(rule)}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
+                >
+                  Edit
+                </button>
+              </span>
+            </div>
+          </article>
+        ))}
+        {!rules.length && (
+          <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 sm:col-span-2">
+            No fee rules configured — every transaction is currently free.
+          </p>
+        )}
+      </section>
+
       {uncovered.length > 0 && (
-        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
           <strong>No rule on {uncovered.map(pretty).join(", ")}.</strong> A transaction type with no
           matching rule is charged nothing — that is a decision, so make it deliberately.
         </p>
@@ -394,10 +487,10 @@ export default function FeesPage() {
       </section>
 
       {editing && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6">
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl sm:p-6">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-black text-slate-950">
                   {editingId ? `Edit ${pretty(editing.transactionType)} fee` : "New fee rule"}
                 </h2>
@@ -406,12 +499,9 @@ export default function FeesPage() {
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setEditing(null);
-                  setEditingId(null);
-                }}
+                onClick={closeEditor}
                 aria-label="Close"
-                className="text-2xl leading-none text-slate-400"
+                className="shrink-0 text-2xl leading-none text-slate-400"
               >
                 ×
               </button>
@@ -482,6 +572,7 @@ export default function FeesPage() {
                   <input
                     type="number"
                     min="0"
+                    inputMode="decimal"
                     value={editing.flatAmount}
                     onChange={(event) => setEditing({ ...editing, flatAmount: event.target.value })}
                     className={field}
@@ -498,6 +589,7 @@ export default function FeesPage() {
                       step="0.01"
                       min="0"
                       max="100"
+                      inputMode="decimal"
                       value={editing.percent}
                       onChange={(event) => setEditing({ ...editing, percent: event.target.value })}
                       className={`${field} mt-0 pr-8`}
@@ -517,6 +609,7 @@ export default function FeesPage() {
                 <input
                   type="number"
                   min="0"
+                  inputMode="decimal"
                   value={editing.minFee}
                   onChange={(event) => setEditing({ ...editing, minFee: event.target.value })}
                   className={field}
@@ -528,6 +621,7 @@ export default function FeesPage() {
                 <input
                   type="number"
                   min="0"
+                  inputMode="decimal"
                   placeholder="No cap"
                   value={editing.maxFee}
                   onChange={(event) => setEditing({ ...editing, maxFee: event.target.value })}
@@ -548,7 +642,7 @@ export default function FeesPage() {
                     <p className="text-[11px] text-slate-500">
                       on {formatCurrency(amount, editing.currencyCode, { compact: true })}
                     </p>
-                    <p className="text-sm font-black text-slate-900">
+                    <p className="text-sm font-black tabular-nums text-slate-900">
                       {formatCurrency(feeOn(amount, editing), editing.currencyCode)}
                     </p>
                   </div>
@@ -567,7 +661,7 @@ export default function FeesPage() {
                 <span className="block text-[13px] font-semibold text-slate-800">
                   Charge this fee
                 </span>
-                <span className="block text-[11px] text-slate-500">
+                <span className="block text-[11px] leading-4 text-slate-500">
                   Unticked, the rule is kept but nothing is charged on this transaction type.
                 </span>
               </span>
@@ -584,20 +678,17 @@ export default function FeesPage() {
               />
             </label>
 
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
               <button
-                onClick={() => {
-                  setEditing(null);
-                  setEditingId(null);
-                }}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700"
+                onClick={closeEditor}
+                className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700"
               >
                 Cancel
               </button>
               <button
                 disabled={busy || editing.reason.trim().length < 5}
                 onClick={() => void submit()}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                className="h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-40"
               >
                 {busy ? "Saving…" : "Save fee rule"}
               </button>
@@ -610,11 +701,11 @@ export default function FeesPage() {
         <div className="fixed inset-0 z-[80] bg-slate-950/50" onClick={() => setHistory(false)}>
           <aside
             onClick={(event) => event.stopPropagation()}
-            className="ml-auto h-full w-full max-w-lg overflow-y-auto bg-white p-6"
+            className="ml-auto flex h-full w-full max-w-lg flex-col bg-white"
           >
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between border-b border-slate-100 p-5 sm:p-6">
               <div>
-                <h2 className="text-xl font-black text-slate-950">Fee change history</h2>
+                <h2 className="text-lg font-black text-slate-950 sm:text-xl">Fee change history</h2>
                 <p className="mt-1 text-xs text-slate-500">
                   The last 30 changes, newest first, with what each one moved.
                 </p>
@@ -622,13 +713,13 @@ export default function FeesPage() {
               <button
                 onClick={() => setHistory(false)}
                 aria-label="Close"
-                className="text-2xl leading-none text-slate-400"
+                className="shrink-0 text-2xl leading-none text-slate-400"
               >
                 ×
               </button>
             </div>
-            <div className="mt-5 space-y-3">
-              {(data?.history ?? []).map((log) => {
+            <div className="flex-1 space-y-3 overflow-y-auto p-5 sm:p-6">
+              {historyRows.map((log) => {
                 const after = (log.newValues ?? {}) as Record<string, unknown>;
                 const before = log.oldValues as Record<string, unknown> | null;
                 const changes = AUDITED_FIELDS.filter(
@@ -647,7 +738,7 @@ export default function FeesPage() {
                     {changes.length > 0 ? (
                       <ul className="mt-3 space-y-1">
                         {changes.map(([key, label]) => (
-                          <li key={key} className="text-xs text-slate-600">
+                          <li key={key} className="text-xs leading-5 text-slate-600">
                             {label}:{" "}
                             <span className="font-semibold text-slate-500 line-through">
                               {auditValue(key, before?.[key])}
@@ -664,14 +755,14 @@ export default function FeesPage() {
                       </p>
                     )}
                     {typeof after.reason === "string" && (
-                      <p className="mt-3 border-t border-slate-100 pt-2 text-xs italic text-slate-600">
+                      <p className="mt-3 border-t border-slate-100 pt-2 text-xs italic leading-5 text-slate-600">
                         “{after.reason}”
                       </p>
                     )}
                   </div>
                 );
               })}
-              {!data?.history.length && (
+              {!historyRows.length && (
                 <p className="text-sm text-slate-500">No fee changes recorded yet.</p>
               )}
             </div>
@@ -680,11 +771,21 @@ export default function FeesPage() {
       )}
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-[90] rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 shadow-xl">
+        <div className="fixed inset-x-4 bottom-5 z-[90] rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 shadow-xl sm:inset-x-auto sm:right-5">
           ✓ {toast}
         </div>
       )}
     </main>
+  );
+}
+
+function StatusPill({ active }: { active: boolean }) {
+  return (
+    <span
+      className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-bold ${active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
+    >
+      {active ? "Live" : "Paused — free"}
+    </span>
   );
 }
 

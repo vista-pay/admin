@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { adminApi, approvalChallengeOf } from "@/lib/api";
 import { AdminSelect } from "@/components/ui/admin-select";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 /**
  * Every platform decision about a community, as one component.
@@ -215,52 +216,54 @@ export function CommunityStatusActions({
       )}
 
       {action && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-lg font-black leading-tight text-slate-950">{TITLE[action]}</h2>
-              <button onClick={close} aria-label="Close" className="-mt-1 shrink-0 rounded-lg p-1 text-xl leading-none text-slate-400 hover:bg-slate-100">×</button>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              This decision is attributed to your admin account and written to the central activity stream.
-              {needsReason && " The reason is shown to the community word for word."}
-            </p>
-            {action === "suspend" && (
-              <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs leading-5 text-red-700">
-                Every officer and member of {community.name} loses access on their next request. Their own records stay
-                readable, and their personal wallets are untouched.
+        <ModalPortal>
+          <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-slate-950/55 p-4">
+            <div className="my-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-lg font-black leading-tight text-slate-950">{TITLE[action]}</h2>
+                <button onClick={close} aria-label="Close" className="-mt-1 shrink-0 rounded-lg p-1 text-xl leading-none text-slate-400 hover:bg-slate-100">×</button>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                This decision is attributed to your admin account and written to the central activity stream.
+                {needsReason && " The reason is shown to the community word for word."}
               </p>
-            )}
-            {action === "request" && (
-              <AdminSelect aria-label="Document required" value={documentType} onChange={(e) => setDocumentType(e.target.value)} containerClassName="mt-4 w-full">
-                {DOCUMENTS.map((d) => <option key={d}>{d}</option>)}
-              </AdminSelect>
-            )}
-            {action === "verify-full" && (
-              <input value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="Legal name exactly as the document carries it (optional)" className="mt-4 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
-            )}
-            {action !== "approve" && (
-              <textarea
-                autoFocus
-                rows={4}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder={action === "request" ? "Optional instructions for the owner" : action === "reject" ? "Reason for rejection" : `Why (at least ${minReason} characters)`}
-                className="mt-3 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-500"
-              />
-            )}
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={close} className="h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold">Cancel</button>
-              <button
-                disabled={busy || (needsReason && note.trim().length < minReason)}
-                onClick={submit}
-                className={`h-11 rounded-xl px-5 text-sm font-bold text-white transition disabled:opacity-40 ${action === "reject" || action === "suspend" ? "bg-red-600 hover:bg-red-700" : action === "reactivate" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"}`}
-              >
-                {busy ? "Saving…" : "Confirm"}
-              </button>
+              {action === "suspend" && (
+                <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs leading-5 text-red-700">
+                  Every officer and member of {community.name} loses access on their next request. Their own records stay
+                  readable, and their personal wallets are untouched.
+                </p>
+              )}
+              {action === "request" && (
+                <AdminSelect aria-label="Document required" value={documentType} onChange={(e) => setDocumentType(e.target.value)} containerClassName="mt-4 w-full">
+                  {DOCUMENTS.map((d) => <option key={d}>{d}</option>)}
+                </AdminSelect>
+              )}
+              {action === "verify-full" && (
+                <input value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="Legal name exactly as the document carries it (optional)" className="mt-4 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500" />
+              )}
+              {action !== "approve" && (
+                <textarea
+                  autoFocus
+                  rows={4}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={action === "request" ? "Optional instructions for the owner" : action === "reject" ? "Reason for rejection" : `Why (at least ${minReason} characters)`}
+                  className="mt-3 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-500"
+                />
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <button onClick={close} className="h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold">Cancel</button>
+                <button
+                  disabled={busy || (needsReason && note.trim().length < minReason)}
+                  onClick={submit}
+                  className={`h-11 rounded-xl px-5 text-sm font-bold text-white transition disabled:opacity-40 ${action === "reject" || action === "suspend" ? "bg-red-600 hover:bg-red-700" : action === "reactivate" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"}`}
+                >
+                  {busy ? "Saving…" : "Confirm"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </>
   );

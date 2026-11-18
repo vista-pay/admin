@@ -176,6 +176,34 @@ type CommunityLogLine = {
 type PolicyRow = { area: string; isPublished: boolean; version: number; content: string | null };
 type DocumentRow = { id: string; name: string; category: string; fileUrl: string; version: number; createdAt: string };
 type BranchRow = { id: string; name: string; members: number };
+type BranchSeat = {
+  id: string;
+  name: string;
+  title: string;
+  role: string;
+  powersPaused: boolean;
+  appointedAt: string;
+};
+/**
+ * A branch and who runs it.
+ *
+ * On the administrators tab rather than with the other branch data, because
+ * a branch manager *is* a community administrator — one whose authority is
+ * bounded to a chapter. A list of only community-wide posts would show a
+ * cooperative with nine officers as having three.
+ */
+type BranchLeadership = {
+  id: string;
+  name: string;
+  code: string | null;
+  city: string | null;
+  state: string | null;
+  lga: string | null;
+  isActive: boolean;
+  memberCount: number;
+  manager: (BranchSeat & { memberCode: string | null }) | null;
+  staff: BranchSeat[];
+};
 
 const STATUS_TONE: Record<string, string> = {
   VERIFIED: "bg-emerald-50 text-emerald-700",
@@ -547,6 +575,8 @@ function AdministratorsTab({
   const roles = (data.roles ?? []) as RoleRow[];
   const vacant = (data.vacant ?? []) as string[];
   const invitations = (data.invitations ?? []) as InvitationRow[];
+  const branches = (data.branches ?? []) as BranchLeadership[];
+  const unmanaged = (data.unmanagedBranches ?? []) as string[];
   const [acting, setActing] = useState<OfficerRow | null>(null);
 
   return (
@@ -606,6 +636,61 @@ function AdministratorsTab({
             </p>
           )}
         </section>
+
+        {branches.length > 0 && (
+          <section className="overflow-hidden rounded-2xl border bg-white">
+            <h2 className="border-b bg-slate-50 px-5 py-3 text-sm font-extrabold uppercase tracking-wide text-slate-600">
+              Branch leadership ({branches.length})
+            </h2>
+            {unmanaged.length > 0 && (
+              <p className="border-b bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
+                Running without a manager: <b>{unmanaged.join(", ")}</b>. Only community-wide officers can
+                act in those branches.
+              </p>
+            )}
+            <div className="divide-y">
+              {branches.map((branch) => (
+                <div key={branch.id} className="p-4">
+                  <p className="flex flex-wrap items-baseline gap-2">
+                    <b className="text-sm">{branch.name}</b>
+                    {branch.code && <span className="text-[11px] font-bold text-slate-400">{branch.code}</span>}
+                    {!branch.isActive && (
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">CLOSED</span>
+                    )}
+                    <span className="ml-auto text-xs text-slate-500">{branch.memberCount} members</span>
+                  </p>
+                  {[branch.lga, branch.city, branch.state].filter(Boolean).length > 0 && (
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {[branch.lga, branch.city, branch.state].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-xs leading-5">
+                    {branch.manager ? (
+                      <>
+                        <b className="text-slate-900">{branch.manager.name}</b>
+                        <span className="text-slate-500"> — {branch.manager.title} ({branch.manager.role}), since {day(branch.manager.appointedAt)}</span>
+                        {branch.manager.powersPaused && (
+                          <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600">POWERS PAUSED</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-amber-700">No manager appointed</span>
+                    )}
+                  </p>
+                  {branch.staff.length > 0 && (
+                    <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                      Staff: {branch.staff.map((seat) => `${seat.name} (${seat.title})`).join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="border-t bg-slate-50 px-5 py-3 text-[11px] leading-5 text-slate-500">
+              A branch seat carries its role&rsquo;s permissions inside that branch only. Pausing a branch
+              officer&rsquo;s powers uses the same control as any other officer, above.
+            </p>
+          </section>
+        )}
 
         {invitations.length > 0 && (
           <section className="rounded-2xl border bg-white p-5">
