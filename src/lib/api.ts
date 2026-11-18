@@ -201,6 +201,41 @@ export async function apiFetch<T>(
 }
 
 /** One line in the central activity feed. */
+/** What the two header inboxes return. Shared by the badge and the dropdown. */
+export type InboxEntry = {
+  kind?: "TICKET" | "DISPUTE";
+  id: string;
+  title: string;
+  from: string;
+  status: string;
+  priority: string;
+  at: string;
+  /** Where clicking it goes — built by the API so the link cannot drift. */
+  href: string;
+};
+
+export type SupportInbox = {
+  openTickets: number;
+  openDisputes: number;
+  total: number;
+  items: InboxEntry[];
+};
+
+export type AccountOfficerInboxEntry = {
+  communityId: string;
+  name: string;
+  preview: string;
+  unread: number;
+  at: string;
+  href: string;
+};
+
+export type AccountOfficerInbox = {
+  communitiesWaiting: number;
+  total: number;
+  items: AccountOfficerInboxEntry[];
+};
+
 export type ActivityRow = {
   id: string;
   event: string;
@@ -621,6 +656,21 @@ export const adminApi = {
     }
   },
   growth: (days = 30) => apiFetch<unknown>("/admin/growth", { params: { days } }),
+  /** Where platform earnings are, and what is available to sweep. */
+  revenueFlow: (days = 30, currency = "NGN") =>
+    apiFetch<unknown>("/admin/platform-revenue/flow", { params: { days, currency } }),
+  revenueSweeps: (page = 1, limit = 20) =>
+    apiFetch<unknown>("/admin/platform-revenue/sweeps", { params: { page, limit } }),
+  /**
+   * Answers 428 ADMIN_APPROVAL_REQUIRED on the first call — the caller is
+   * expected to read `ApiError.code` and show the approval it raised rather
+   * than treating it as a failure.
+   */
+  requestRevenueSweep: (body: { amount: string; currencyCode: string; reason: string }) =>
+    apiFetch<unknown>("/admin/platform-revenue/sweeps", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listUsers: (params: { page?: number; limit?: number; search?: string }) =>
     apiFetch<unknown>("/admin/users", { params: params as Record<string, string | number | boolean | undefined> }),
   getUser: (id: string) => apiFetch<unknown>(`/admin/users/${id}`),
@@ -976,6 +1026,13 @@ export const adminApi = {
       uploadUrl: string;
       expiresAt: string;
     }>("/admin/media/banner-upload-signature", { method: "POST", body: "{}" }),
+
+  // ── The two header inboxes ────────────────────────────────────────────
+  // Cheap by design: counts plus a handful of rows, polled from every page.
+  supportInbox: () => apiFetch<SupportInbox>("/admin/support/inbox"),
+  accountOfficerInbox: () => apiFetch<AccountOfficerInbox>("/admin/account-officers/inbox"),
+  listSupportTickets: (status?: string) =>
+    apiFetch<unknown>(`/admin/support/tickets${status ? `?status=${status}` : ""}`),
 
   // ── Account officers (dedicated support) ──────────────────────────────
   listAccountOfficerCommunities: () => apiFetch<unknown>("/admin/account-officers"),

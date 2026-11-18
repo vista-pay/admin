@@ -15,6 +15,10 @@ type NavGroup = { label: string; items: NavItem[] };
 const NAV: NavGroup[] = [
   { label: "Overview", items: [
     { label: "Command center", href: "/overview", icon: "⌂" },
+    // Platform earnings: what was charged, where it is held, and the one
+    // place it can be paid out to Rendi's own account. Next to the command
+    // center because "did we make money" belongs beside "is it working".
+    { label: "Money flow", href: "/money-flow", icon: "₦" },
     // The live feed of everything, from every app. Above the queues on
     // purpose: it is the answer to "what is happening right now".
     { label: "Activity", href: "/activity", icon: "◉" },
@@ -61,6 +65,7 @@ const NAV: NavGroup[] = [
       { label: "Subscribers", href: "/community-subscriptions" },
       { label: "Revenue", href: "/subscription-revenue" },
     ] },
+    { label: "Support requests", href: "/support", icon: "◎" },
     { label: "Complaints & disputes", href: "/disputes", icon: "▱", badgeKey: "disputes" },
     { label: "Account officers", href: "/account-officers", icon: "☏" },
   ] },
