@@ -44,3 +44,26 @@ export function getInitials(name: string) {
     .map((n) => n[0]?.toUpperCase())
     .join("");
 }
+
+/**
+ * Whole days between today and the given date, counted on the calendar.
+ *
+ * Counting raw elapsed milliseconds and rounding up turns any fraction of a
+ * day into a whole one, so a period ending tomorrow reads "2 days left" and a
+ * 30-day period can claim 32 days remaining. Both numbers come off the same
+ * calendar as the date printed beside them. Today is 0, tomorrow is 1.
+ */
+export function daysUntil(iso: string) {
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return 0;
+  // Pinned to the communities' own calendar rather than the console's, so a
+  // date and the count beside it agree wherever the page is rendered.
+  const civil = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Lagos",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const asUtcMidnight = (d: Date) => Date.parse(`${civil.format(d)}T00:00:00Z`);
+  return Math.round((asUtcMidnight(target) - asUtcMidnight(new Date())) / 86_400_000);
+}

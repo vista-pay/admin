@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/api";
+import { daysUntil } from "@/lib/utils";
 import { AdminSelect } from "@/components/ui/admin-select";
 
 type PlanOption = {
@@ -380,10 +381,7 @@ export default function CommunitySubscriptionsPage() {
               ) : (
                 (() => {
                   const sub = viewing.subscription;
-                  const daysLeft = Math.max(
-                    0,
-                    Math.ceil((new Date(sub.currentPeriodEnd).getTime() - Date.now()) / 86_400_000),
-                  );
+                  const daysLeft = Math.max(0, daysUntil(sub.currentPeriodEnd));
                   const periodPct = (() => {
                     const start = new Date(sub.currentPeriodStart).getTime();
                     const end = new Date(sub.currentPeriodEnd).getTime();
