@@ -16,11 +16,14 @@ import { CommunityStatusActions, OfficerAccessDialog } from "@/components/commun
  * so a link can point at a specific one — the dashboard's overdue list links
  * straight to `?tab=contributions`.
  *
- * Read-only throughout. The decisions that change a community — suspend,
- * deactivate, re-tier, pause an officer — live on the Registration &
- * Approvals page behind the maker-checker gate, and this page links there
- * rather than growing a second set of buttons that would need the same gate
- * reimplemented.
+ * Read-only except for the platform decisions themselves — suspend,
+ * deactivate, re-tier, pause an officer — which are here under "Manage
+ * status" and on the Administrators tab. They share one component with the
+ * Registration & Approvals page rather than being reimplemented, so the
+ * maker-checker gate and its 428 handling exist once. They used to be only a
+ * link to that page, which opens on the review queue: for a community
+ * already verified the operator landed on a list it was not in, and the
+ * controls looked missing.
  */
 
 type Tab =
@@ -201,6 +204,8 @@ type BranchLeadership = {
   lga: string | null;
   isActive: boolean;
   memberCount: number;
+  /** What the branch has filed and had paid — is it actually being run? */
+  spending: { pending: number; paidTotal: string };
   manager: (BranchSeat & { memberCode: string | null }) | null;
   staff: BranchSeat[];
 };
@@ -657,7 +662,11 @@ function AdministratorsTab({
                     {!branch.isActive && (
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">CLOSED</span>
                     )}
-                    <span className="ml-auto text-xs text-slate-500">{branch.memberCount} members</span>
+                    <span className="ml-auto text-xs text-slate-500">
+                      {branch.memberCount} members
+                      {Number(branch.spending?.paidTotal ?? 0) > 0 && ` · ${money(branch.spending.paidTotal)} spent`}
+                      {branch.spending?.pending > 0 && ` · ${branch.spending.pending} awaiting approval`}
+                    </span>
                   </p>
                   {[branch.lga, branch.city, branch.state].filter(Boolean).length > 0 && (
                     <p className="mt-0.5 text-[11px] text-slate-500">
