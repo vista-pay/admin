@@ -32,6 +32,10 @@ type QueueRow = {
   assignedAdminId: string | null;
   user?: { id: string; email: string | null; phone: string | null } | null;
   community?: { id: string; name: string } | null;
+  /** EMAIL means it arrived at support@rendi.ng and the reply leaves by mail. */
+  channel?: "APP" | "EMAIL";
+  requesterEmail?: string | null;
+  requesterName?: string | null;
 };
 
 type TicketMessage = {
@@ -65,6 +69,10 @@ const STATUS_LABEL: Record<string, string> = {
   RESOLVED: "Resolved",
   CLOSED: "Closed",
 };
+
+/** Who is actually waiting on this: a community, an account, or an address. */
+const requester = (row: QueueRow) =>
+  row.community?.name ?? row.requesterName ?? row.requesterEmail ?? row.user?.email ?? "A customer";
 
 /** Open means somebody is still waiting; the rest is history. */
 const OPEN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "WAITING_FOR_INFO"];
@@ -266,9 +274,16 @@ function SupportQueue() {
                     >
                       {STATUS_LABEL[row.status] ?? row.status}
                     </span>
+                    {row.channel === "EMAIL" && (
+                      <span
+                        className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700"
+                        title="Arrived by email; replies go back by email"
+                      >
+                        MAIL
+                      </span>
+                    )}
                     <span className="truncate text-[11px] text-slate-500">
-                      {/* A community ticket is the community's, whoever typed it. */}
-                      {row.community?.name ?? row.user?.email ?? "A customer"}
+                      {requester(row)}
                     </span>
                     {row.priority !== "NORMAL" && (
                       <span className="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
@@ -313,7 +328,10 @@ function SupportQueue() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-slate-900">{ticket.subject}</p>
                   <p className="truncate text-[11px] text-slate-500">
-                    {ticket.reference} · {ticket.community?.name ?? ticket.user?.email ?? "A customer"}
+                    {ticket.reference} · {requester(ticket)}
+                    {ticket.channel === "EMAIL" && ticket.requesterEmail && (
+                      <> · by email from {ticket.requesterEmail}</>
+                    )}
                     {ticket.transactionReference && <> · tx {ticket.transactionReference}</>}
                   </p>
                 </div>
@@ -341,7 +359,7 @@ function SupportQueue() {
                     text: ticket.description,
                     at: ticket.createdAt,
                     mine: false,
-                    author: ticket.community?.name ?? ticket.user?.email ?? "A customer",
+                    author: requester(ticket),
                   },
                   ...ticket.messages.map((message) => ({
                     id: message.id,
@@ -371,7 +389,13 @@ function SupportQueue() {
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     rows={2}
-                    placeholder={internal ? "Note for other admins…" : "Reply to them…"}
+                    placeholder={
+                      internal
+                        ? "Note for other admins…"
+                        : ticket.channel === "EMAIL"
+                          ? `Reply — emailed to ${ticket.requesterEmail ?? "them"}`
+                          : "Reply to them…"
+                    }
                     className="max-h-32 min-h-[2.75rem] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-[#012A9D]"
                   />
                   <Button type="submit" loading={busy} disabled={!draft.trim()}>
