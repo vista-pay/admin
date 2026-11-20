@@ -742,6 +742,13 @@ export const adminApi = {
     }),
   retirePayoutDestination: (id: string) =>
     apiFetch<unknown>(`/admin/platform-revenue/destinations/${id}`, { method: "DELETE" }),
+  /** The payout bank directory, so nobody has to know a NIP code. */
+  payoutBanks: () => apiFetch<unknown>("/admin/platform-revenue/banks"),
+  resolvePayoutAccount: (body: { accountNumber: string; bankCode: string }) =>
+    apiFetch<unknown>("/admin/platform-revenue/resolve-account", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listUsers: (params: { page?: number; limit?: number; search?: string }) =>
     apiFetch<unknown>("/admin/users", { params: params as Record<string, string | number | boolean | undefined> }),
   getUser: (id: string) => apiFetch<unknown>(`/admin/users/${id}`),

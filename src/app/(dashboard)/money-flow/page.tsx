@@ -53,6 +53,8 @@ type Flow = {
   bySource: Array<{ source: string; amount: string; count: number }>;
 };
 
+type Bank = { bankName: string; bankCode: string; initials?: string };
+
 type Destination = {
   id: string;
   label: string;
@@ -223,8 +225,7 @@ export default function MoneyFlowPage() {
         {!canSweep && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
             <b>No payout destination is registered.</b> Add the bank account Rendi&rsquo;s earnings
-            should be paid into — below — and a second administrator approves it. Until then the
-            figures above are reporting only.
+            should be paid into — below. Until then the figures above are reporting only.
           </div>
         )}
 
@@ -681,17 +682,61 @@ function DestinationDialog({
   const [label, setLabel] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [bankCode, setBankCode] = useState("");
-  const [bankName, setBankName] = useState("");
   const [reason, setReason] = useState("");
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [resolved, setResolved] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [raised, setRaised] = useState<string | null>(null);
 
-  const valid =
-    label.trim().length >= 3 &&
-    /^\d{10}$/.test(accountNumber) &&
-    /^\d{3,6}$/.test(bankCode) &&
-    reason.trim().length >= 10;
+  useEffect(() => {
+    let active = true;
+    adminApi
+      .payoutBanks()
+      .then((result) => {
+        if (active) setBanks(((result as { data: Bank[] }).data ?? []));
+      })
+      .catch(() => {
+        if (active) setError("Could not load the bank list. Try again shortly.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /**
+   * Resolve as soon as there is something to resolve.
+   *
+   * The name is the actual check on this form — a label and a number prove
+   * nothing, and seeing "RENDI TECHNOLOGIES LTD" before pressing register is
+   * what catches a transposed digit.
+   */
+  // Cleared by the inputs themselves rather than here, so the effect only
+  // ever fetches — editing either field invalidates a resolved name.
+  useEffect(() => {
+    if (!/^\d{10}$/.test(accountNumber) || !bankCode) return;
+    let active = true;
+    adminApi
+      .resolvePayoutAccount({ accountNumber, bankCode })
+      .then((result) => {
+        if (!active) return;
+        setResolved((result as { data: { accountName: string } }).data?.accountName ?? null);
+      })
+      .catch((cause: Error) => {
+        if (active) setError(cause.message || "That account could not be verified.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [accountNumber, bankCode]);
+
+  /** Derived rather than held: the inputs already say whether a lookup is owed. */
+  const complete = /^\d{10}$/.test(accountNumber) && Boolean(bankCode);
+  const checking = complete && !resolved && !error;
+
+  // No resolved name means no registration: the whole point is that the bank
+  // confirms the account before it can ever receive money.
+  const valid = label.trim().length >= 3 && Boolean(resolved) && reason.trim().length >= 10;
 
   async function submit() {
     setBusy(true);
@@ -701,7 +746,6 @@ function DestinationDialog({
         label: label.trim(),
         accountNumber,
         bankCode,
-        ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
         currencyCode: currency,
         reason: reason.trim(),
       });
@@ -743,7 +787,7 @@ function DestinationDialog({
           <>
             <h2 className="text-base font-bold text-[#0F172A]">Register a bank account</h2>
             <p className="mt-1 text-[11px] text-[#64748B]">
-              The account name is taken from the bank, not typed here
+              Pick the bank and enter the number — the name comes from the bank itself
             </p>
 
             <label className="mt-4 block text-[11px] font-semibold text-[#475569]">
@@ -756,38 +800,57 @@ function DestinationDialog({
               />
             </label>
 
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <label className="block text-[11px] font-semibold text-[#475569]">
-                Account number
-                <input
-                  value={accountNumber}
-                  onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, "").slice(0, 10))}
-                  inputMode="numeric"
-                  placeholder="0045434120"
-                  className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
-                />
-              </label>
-              <label className="block text-[11px] font-semibold text-[#475569]">
-                NIP bank code
-                <input
-                  value={bankCode}
-                  onChange={(event) => setBankCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  inputMode="numeric"
-                  placeholder="000013"
-                  className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
-                />
-              </label>
-            </div>
+            <label className="mt-3 block text-[11px] font-semibold text-[#475569]">
+              Bank
+              <select
+                value={bankCode}
+                onChange={(event) => {
+                  setBankCode(event.target.value);
+                  setResolved(null);
+                  setError("");
+                }}
+                disabled={banks.length === 0}
+                className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A] disabled:bg-slate-50"
+              >
+                <option value="">
+                  {banks.length === 0 ? "Loading banks…" : "Choose a bank"}
+                </option>
+                {banks.map((bank) => (
+                  <option key={`${bank.bankCode}-${bank.bankName}`} value={bank.bankCode}>
+                    {bank.bankName}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="mt-3 block text-[11px] font-semibold text-[#475569]">
-              Bank name <span className="font-normal text-slate-400">(optional)</span>
+              Account number
               <input
-                value={bankName}
-                onChange={(event) => setBankName(event.target.value)}
-                placeholder="GTBANK PLC"
+                value={accountNumber}
+                onChange={(event) => {
+                  setAccountNumber(event.target.value.replace(/\D/g, "").slice(0, 10));
+                  setResolved(null);
+                  setError("");
+                }}
+                inputMode="numeric"
+                placeholder="0045434120"
                 className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
               />
             </label>
+
+            {/* The verification, shown before the operator can commit. */}
+            <div className="mt-2 min-h-[32px]">
+              {checking && (
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-[#64748B]">
+                  Checking with the bank…
+                </p>
+              )}
+              {resolved && (
+                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800">
+                  ✓ {resolved}
+                </p>
+              )}
+            </div>
 
             <label className="mt-3 block text-[11px] font-semibold text-[#475569]">
               Reason for the approver
@@ -818,7 +881,7 @@ function DestinationDialog({
                 disabled={!valid || busy}
                 className="h-10 flex-1 rounded-lg bg-[#1F3770] text-xs font-bold text-white disabled:bg-slate-300"
               >
-                {busy ? "Checking with the bank…" : "Register account"}
+                {busy ? "Registering…" : "Register account"}
               </button>
             </div>
           </>
