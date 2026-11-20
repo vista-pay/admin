@@ -82,6 +82,24 @@ const FALLBACK_TYPES = [
 const HIDDEN_TYPES = ["FX_CONVERSION", "INTERNATIONAL_TRANSFER"];
 
 /**
+ * Types whose charging path tells the engine who is paying.
+ *
+ * The merchant rate is only reachable when the code that charges passes the
+ * payer's business or community along — `calculateFee(..., { communityId })`.
+ * Where it does not, the engine sees an anonymous payer, considers only the
+ * Everyone rule, and a merchant rate saved against that type sits in the
+ * table looking live while never being charged. Listing them here lets the
+ * form say so instead of letting an operator configure a rate that cannot
+ * fire. Keep in step with the `calculateFee` call sites.
+ */
+const MERCHANT_AWARE_TYPES = [
+  "DEPOSIT",
+  "WITHDRAWAL",
+  "PAYMENT_LINK",
+  "MERCHANT_SETTLEMENT",
+];
+
+/**
  * Who each rate is for, in the operator's words rather than the enum's.
  *
  * EVERYONE is the floor: a payer with no more specific rate pays it. MERCHANT
@@ -670,6 +688,20 @@ export default function FeesPage() {
                     ? "Merchants take this instead of the Everyone rate. Pause it to make this transaction type free for them alone."
                     : "The rate a payer falls back to when no merchant rate is set."}
                 </span>
+
+                {/* A rate that cannot be charged is worse than no rate: the
+                    table shows it as live and the money quietly goes out at
+                    the Everyone price. */}
+                {editing.audience === "MERCHANT" &&
+                  !MERCHANT_AWARE_TYPES.includes(editing.transactionType) && (
+                    <span className="mt-2 block rounded-lg bg-amber-50 px-3 py-2 font-semibold normal-case leading-5 tracking-normal text-amber-900">
+                      {pretty(editing.transactionType)} does not price by payer yet, so this rate
+                      would never be charged — merchants would pay the Everyone rate. For money
+                      leaving a community or business account, use{" "}
+                      <strong>Withdrawal</strong> (to a bank) or <strong>Merchant Settlement</strong>{" "}
+                      (a settlement run).
+                    </span>
+                  )}
               </label>
 
               <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 sm:col-span-2">

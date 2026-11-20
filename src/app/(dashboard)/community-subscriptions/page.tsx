@@ -167,6 +167,35 @@ export default function CommunitySubscriptionsPage() {
     }
   }
 
+  /**
+   * End a trial early and bill for the period that follows.
+   *
+   * Confirmed rather than instant: it brings a real charge forward, and the
+   * community sees an invoice appear that they were told would not come until
+   * the trial ran out.
+   */
+  async function endTrial(communityId: string, name: string) {
+    if (
+      !window.confirm(
+        `End ${name}'s trial now?\n\nThe first invoice is raised immediately for the period that follows. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await adminApi.endCommunityTrial(communityId);
+      setToast(`${name}'s trial ended — first invoice raised.`);
+      setViewing(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not end the trial");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const pages = listing ? Math.max(1, Math.ceil(listing.total / listing.limit)) : 1;
 
   return (
@@ -454,6 +483,27 @@ export default function CommunitySubscriptionsPage() {
                           </div>
                         ))}
                       </dl>
+
+                      {/* Trial dates are stamped on the subscription when it
+                          starts, so taking the trial off the plan does not
+                          shorten one already running. This is how you end it. */}
+                      {sub.status === "TRIALING" && (
+                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                          <p className="text-xs font-bold text-amber-900">On trial</p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
+                            Nothing is charged until {day(sub.trialEndsAt ?? sub.currentPeriodEnd)}.
+                            Removing the trial from the plan does not change this one — end it here
+                            to raise the first invoice now.
+                          </p>
+                          <button
+                            onClick={() => void endTrial(viewing.id, viewing.name)}
+                            disabled={busy}
+                            className="mt-2.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                          >
+                            End trial and invoice now
+                          </button>
+                        </div>
+                      )}
                     </>
                   );
                 })()
