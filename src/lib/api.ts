@@ -618,7 +618,48 @@ export interface AdminSearchResponse {
   truncated: boolean;
 }
 
+/** A settlement destination awaiting Rendi's decision. */
+export interface SettlementAccountRow {
+  id: string;
+  bankName: string;
+  bankCode: string;
+  accountNumber: string;
+  accountName: string;
+  isDefault: boolean;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedAt: string | null;
+  reviewReason: string | null;
+  createdAt: string;
+  /** False is the finding an approver is really looking for. */
+  nameMatchesOwner: boolean;
+  owner: { kind: "COMMUNITY" | "BUSINESS"; id: string; name: string } | null;
+  community: { id: string; name: string; publicId: string | null; status: string; email: string; phone: string } | null;
+}
+
 export const adminApi = {
+  settlementAccounts: (params: { status?: string; page?: number; limit?: number } = {}) =>
+    apiFetch<{
+      items: SettlementAccountRow[];
+      total: number;
+      page: number;
+      limit: number;
+      pending: number;
+    }>(`/admin/settlement-accounts?${new URLSearchParams(
+      Object.entries(params).reduce<Record<string, string>>((acc, [key, value]) => {
+        if (value !== undefined) acc[key] = String(value);
+        return acc;
+      }, {}),
+    )}`),
+  approveSettlementAccount: (accountId: string, reason?: string) =>
+    apiFetch<{ id: string; status: string }>(`/admin/settlement-accounts/${accountId}/approve`, {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    }),
+  rejectSettlementAccount: (accountId: string, reason: string) =>
+    apiFetch<{ id: string; status: string }>(`/admin/settlement-accounts/${accountId}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
   me: () => apiFetch<AdminProfile>("/admin/me"),
   /**
    * Type-ahead across every source the signed-in role may open. `signal` lets

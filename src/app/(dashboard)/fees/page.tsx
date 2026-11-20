@@ -5,10 +5,14 @@ import { apiFetch } from "@/lib/api";
 import { AdminSelect } from "@/components/ui/admin-select";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
+type Audience = "EVERYONE" | "MERCHANT";
+
 type Rule = {
   id: string;
   transactionType: string;
   currencyCode: string;
+  /** Who the rate is for. A merchant takes MERCHANT where one exists. */
+  audience: Audience;
   feeType: "FLAT" | "PERCENTAGE" | "HYBRID";
   flatAmount: string;
   /** A fraction of the amount, not a percentage: 0.015 means 1.5%. */
@@ -33,6 +37,7 @@ type Response = { items: Rule[]; history: Log[]; chargeableTypes?: string[] };
 type Form = {
   transactionType: string;
   currencyCode: string;
+  audience: Audience;
   feeType: Rule["feeType"];
   flatAmount: string;
   /** Held as a percentage, the way an operator says it: 1.5 means 1.5%. */
@@ -46,6 +51,7 @@ type Form = {
 const BLANK: Form = {
   transactionType: "TRANSFER",
   currencyCode: "NGN",
+  audience: "EVERYONE",
   feeType: "FLAT",
   flatAmount: "0",
   percent: "0",
@@ -74,6 +80,23 @@ const FALLBACK_TYPES = [
  * type back into the table, the history and the "New fee rule" list.
  */
 const HIDDEN_TYPES = ["FX_CONVERSION", "INTERNATIONAL_TRANSFER"];
+
+/**
+ * Who each rate is for, in the operator's words rather than the enum's.
+ *
+ * EVERYONE is the floor: a payer with no more specific rate pays it. MERCHANT
+ * covers business and community wallets — the same two the platform calls a
+ * merchant account — and wins for them wherever it exists.
+ */
+const AUDIENCE_LABEL: Record<Audience, string> = {
+  EVERYONE: "Everyone",
+  MERCHANT: "Merchants",
+};
+
+const AUDIENCE_HINT: Record<Audience, string> = {
+  EVERYONE: "Anyone without a more specific rate",
+  MERCHANT: "Business and community accounts",
+};
 
 const pretty = (value: string) =>
   value.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -135,6 +158,7 @@ const PREVIEW_AMOUNTS = [1000, 10000, 100000, 1000000];
 
 /** The fields a history entry compares, in the order they are read. */
 const AUDITED_FIELDS: Array<[string, string]> = [
+  ["audience", "Applies to"],
   ["feeType", "Fee model"],
   ["flatAmount", "Flat amount"],
   ["percentageRate", "Percentage rate"],
@@ -145,6 +169,7 @@ const AUDITED_FIELDS: Array<[string, string]> = [
 
 function auditValue(field: string, value: unknown) {
   if (value === null || value === undefined || value === "") return "—";
+  if (field === "audience") return AUDIENCE_LABEL[value as Audience] ?? String(value);
   if (field === "percentageRate") return `${toPercent(String(value))}%`;
   if (field === "isActive") return value ? "Live" : "Paused";
   return String(value);
@@ -193,7 +218,11 @@ export default function FeesPage() {
 
   /** Chargeable types with no rule at all: those transactions are free today. */
   const uncovered = useMemo(
-    () => types.filter((type) => !rules.some((rule) => rule.transactionType === type)),
+    () =>
+      types.filter(
+        (type) =>
+          !rules.some((rule) => rule.transactionType === type && rule.audience === "EVERYONE"),
+      ),
     [types, rules],
   );
 
@@ -218,6 +247,7 @@ export default function FeesPage() {
     setEditing({
       transactionType: rule.transactionType,
       currencyCode: rule.currencyCode,
+      audience: rule.audience,
       feeType: rule.feeType,
       flatAmount: rule.flatAmount,
       percent: toPercent(rule.percentageRate),
@@ -242,6 +272,7 @@ export default function FeesPage() {
         body: JSON.stringify({
           transactionType: editing.transactionType,
           currencyCode: editing.currencyCode.toUpperCase(),
+          audience: editing.audience,
           feeType: editing.feeType,
           flatAmount: editing.flatAmount || "0",
           percentageRate: toRate(editing.percent),
@@ -269,6 +300,7 @@ export default function FeesPage() {
         body: JSON.stringify({
           transactionType: rule.transactionType,
           currencyCode: rule.currencyCode,
+          audience: rule.audience,
           feeType: rule.feeType,
           flatAmount: rule.flatAmount,
           percentageRate: rule.percentageRate,
@@ -276,14 +308,14 @@ export default function FeesPage() {
           maxFee: rule.maxFee ?? undefined,
           isActive: !rule.isActive,
           reason: rule.isActive
-            ? `${pretty(rule.transactionType)} fee paused from the admin console`
-            : `${pretty(rule.transactionType)} fee resumed from the admin console`,
+            ? `${pretty(rule.transactionType)} ${AUDIENCE_LABEL[rule.audience].toLowerCase()} fee paused from the admin console`
+            : `${pretty(rule.transactionType)} ${AUDIENCE_LABEL[rule.audience].toLowerCase()} fee resumed from the admin console`,
         }),
       });
       setToast(
         rule.isActive
-          ? `${pretty(rule.transactionType)} is now free — no fee is charged.`
-          : `${pretty(rule.transactionType)} fee is live again.`,
+          ? `${pretty(rule.transactionType)} is now free for ${AUDIENCE_LABEL[rule.audience].toLowerCase()}.`
+          : `${pretty(rule.transactionType)} fee is live again for ${AUDIENCE_LABEL[rule.audience].toLowerCase()}.`,
       );
       await load();
     } catch (cause) {
@@ -340,6 +372,7 @@ export default function FeesPage() {
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-bold">Transaction</th>
+              <th className="px-4 py-3 font-bold">Applies to</th>
               <th className="px-4 py-3 font-bold">Model</th>
               <th className="px-4 py-3 font-bold">What it charges</th>
               <th className="px-4 py-3 text-right font-bold">Fee on ₦10,000</th>
@@ -354,6 +387,9 @@ export default function FeesPage() {
                 <td className="px-4 py-3">
                   <p className="font-bold text-slate-900">{pretty(rule.transactionType)}</p>
                   <p className="text-xs text-slate-500">{rule.currencyCode}</p>
+                </td>
+                <td className="px-4 py-3">
+                  <AudiencePill audience={rule.audience} />
                 </td>
                 <td className="px-4 py-3 text-xs font-semibold text-slate-600">
                   {pretty(rule.feeType)}
@@ -409,7 +445,10 @@ export default function FeesPage() {
                   {rule.currencyCode} · {pretty(rule.feeType)}
                 </p>
               </div>
-              <StatusPill active={rule.isActive} />
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <StatusPill active={rule.isActive} />
+                <AudiencePill audience={rule.audience} />
+              </span>
             </div>
 
             <p className="mt-3 font-semibold text-slate-800">{ruleText(rule)}</p>
@@ -492,7 +531,9 @@ export default function FeesPage() {
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <h2 className="text-lg font-black text-slate-950">
-                  {editingId ? `Edit ${pretty(editing.transactionType)} fee` : "New fee rule"}
+                  {editingId
+                    ? `Edit ${pretty(editing.transactionType)} fee · ${AUDIENCE_LABEL[editing.audience]}`
+                    : "New fee rule"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   Saved changes are live for new transactions immediately.
@@ -510,8 +551,9 @@ export default function FeesPage() {
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 Transaction type
-                {/* The rule is keyed on type + currency, so changing either on
-                    an existing rule would silently write a different row. */}
+                {/* The rule is keyed on type + currency + audience, so changing
+                    any of the three on an existing rule would silently write a
+                    different row and leave this one as it was. */}
                 {editingId ? (
                   <p className="mt-1 flex h-10 items-center rounded-xl bg-slate-100 px-3 text-sm font-semibold normal-case tracking-normal text-slate-700">
                     {pretty(editing.transactionType)}
@@ -549,6 +591,31 @@ export default function FeesPage() {
                     className={field}
                   />
                 )}
+              </label>
+
+              <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 sm:col-span-2">
+                Applies to
+                {editingId ? (
+                  <p className="mt-1 flex h-10 items-center rounded-xl bg-slate-100 px-3 text-sm font-semibold normal-case tracking-normal text-slate-700">
+                    {AUDIENCE_LABEL[editing.audience]}
+                  </p>
+                ) : (
+                  <AdminSelect
+                    value={editing.audience}
+                    onChange={(event) =>
+                      setEditing({ ...editing, audience: event.target.value as Audience })
+                    }
+                    containerClassName="mt-1 w-full"
+                  >
+                    <option value="EVERYONE">Everyone — anyone without a more specific rate</option>
+                    <option value="MERCHANT">Merchants — business and community accounts</option>
+                  </AdminSelect>
+                )}
+                <span className="mt-1 block font-semibold normal-case tracking-normal text-slate-400">
+                  {editing.audience === "MERCHANT"
+                    ? "Merchants take this instead of the Everyone rate. Pause it to make this transaction type free for them alone."
+                    : "The rate a payer falls back to when no merchant rate is set."}
+                </span>
               </label>
 
               <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500 sm:col-span-2">
@@ -776,6 +843,24 @@ export default function FeesPage() {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * Marks which payers a row is for. Only drawn with colour for MERCHANT: the
+ * ordinary rate is the default case and badging every row the same shade
+ * would make the one exception harder to spot, not easier.
+ */
+function AudiencePill({ audience }: { audience: Audience }) {
+  return (
+    <span
+      title={AUDIENCE_HINT[audience]}
+      className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-bold ${
+        audience === "MERCHANT" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {AUDIENCE_LABEL[audience]}
+    </span>
   );
 }
 

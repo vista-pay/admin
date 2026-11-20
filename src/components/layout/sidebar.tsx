@@ -26,7 +26,13 @@ const NAV: NavGroup[] = [
   ] },
   { label: "Money & risk", items: [
     { label: "Transactions", href: "/transactions", icon: "▤" },
-    { label: "Settlements & recon", href: "/reconciliation", icon: "⛓", badgeKey: "reconciliation" },
+    { label: "Settlements & recon", href: "/reconciliation", icon: "⛓", badgeKey: "reconciliation", children: [
+      { label: "Settlements & recon", href: "/reconciliation", badgeKey: "reconciliation" },
+      // A community with an unapproved destination cannot be paid, so this
+      // queue is somebody's money sitting still — it belongs beside the desk
+      // that answers for money leaving the platform.
+      { label: "Settlement approvals", href: "/settlement-approvals" },
+    ] },
     { label: "Risk & fraud", href: "/compliance", icon: "♢", badgeKey: "compliance" },
   ] },
   { label: "Users", items: [

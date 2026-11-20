@@ -366,8 +366,31 @@ function SupportQueue() {
                 </AdminSelect>
               </header>
 
-              <section className="border-b border-slate-200 bg-white px-5 py-4">
-                <div className="grid gap-3 md:grid-cols-4">
+              {/*
+                The facts, folded away.
+                
+                They used to sit open in a four-column grid above a repeat of
+                the opening message, which together pushed the conversation
+                off the bottom of the screen — the one thing an agent is here
+                to read. Requester, category and reference are already on the
+                header line above, so the grid was saying it twice; what is
+                left behind the toggle is the detail nobody needs until they
+                need it.
+              */}
+              <details className="group border-b border-slate-200 bg-white open:bg-slate-50/60">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-[11px] font-semibold text-slate-500 hover:bg-slate-50">
+                  <span className="transition group-open:rotate-90" aria-hidden>›</span>
+                  Ticket details
+                  <span className={`ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${ticket.priority === "NORMAL" ? "bg-slate-100 text-slate-600" : "bg-red-50 text-red-700"}`}>
+                    {ticket.priority.toLowerCase()} urgency
+                  </span>
+                  {ticket.transactionReference && (
+                    <span className="truncate text-[10px] font-medium text-slate-500">
+                      tx {ticket.transactionReference}
+                    </span>
+                  )}
+                </summary>
+                <div className="grid gap-3 px-4 pb-4 md:grid-cols-4">
                   <TicketFact label="Requester" value={requester(ticket)} />
                   <TicketFact label="Category" value={categoryLabel(ticket)} verbatim />
                   <TicketFact label="Urgency" value={ticket.priority.toLowerCase()} />
@@ -376,25 +399,35 @@ function SupportQueue() {
                     <TicketFact label="Transaction reference" value={ticket.transactionReference} />
                   )}
                 </div>
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">What happened</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-900">{ticket.description}</p>
-                  {ticket.messages[0]?.body.trim() === ticket.description.trim() && ticket.messages[0].attachments?.length ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {ticket.messages[0].attachments.map((file) => (
-                        <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-700 underline">
-                          {file.fileName}
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </section>
+              </details>
 
+              {/*
+                The opening message is left in the thread rather than lifted
+                out of it. It *is* the customer's first message — pulling it
+                into a box above meant the conversation started mid-sentence,
+                and its attachments were stranded up there away from the reply
+                they belong to.
+              */}
               <ChatThread
                 messages={[
+                  // A ticket whose opening message was never recorded as one
+                  // — an email that arrived before the thread existed, say —
+                  // would otherwise show an empty conversation and lose the
+                  // complaint entirely. Synthesised only when no message
+                  // already carries it, so the normal case stays one message.
+                  ...(ticket.messages.some((message) => message.body.trim() === ticket.description.trim())
+                    ? []
+                    : [
+                        {
+                          id: `${ticket.reference}-opening`,
+                          text: ticket.description,
+                          at: ticket.createdAt,
+                          mine: false,
+                          author: requester(ticket),
+                          attachments: undefined,
+                        },
+                      ]),
                   ...ticket.messages
-                    .filter((message, index) => !(index === 0 && message.authorType === "CUSTOMER" && message.body.trim() === ticket.description.trim()))
                     .map((message) => ({
                     id: message.id,
                     // An internal note is marked, or an admin cannot tell what

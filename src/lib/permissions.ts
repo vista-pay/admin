@@ -78,6 +78,10 @@ const ROUTE_ALIASES: Record<string, string> = {
   limits: "limits",
   providers: "system-health",
   reports: "overview",
+  // Where a community's money may leave Rendi. The settlements desk's work,
+  // so it borrows their permission rather than inventing a key nobody has
+  // been granted — an unassignable permission is a queue nobody clears.
+  "settlement-approvals": "reconciliation",
 };
 
 /**
