@@ -19,12 +19,15 @@ import { adminApi } from "@/lib/api";
 import { AdminSelect } from "@/components/ui/admin-select";
 import { Button } from "@/components/ui/button";
 import { ChatThread } from "@/components/admin/chat-thread";
+import { notifyInboxChanged } from "@/components/layout/header-inboxes";
 import { cn } from "@/lib/utils";
 
 type QueueRow = {
   reference: string;
   subject: string;
   category: string;
+  /** What the customer typed when they picked "Other" as the subject. */
+  subcategory?: string | null;
   status: string;
   priority: string;
   lastActivityAt: string;
@@ -74,6 +77,16 @@ const STATUS_LABEL: Record<string, string> = {
 const requester = (row: QueueRow) =>
   row.community?.name ?? row.requesterName ?? row.requesterEmail ?? row.user?.email ?? "A customer";
 
+/**
+ * What it is about. "Other" is the one category that says nothing on its own,
+ * so the customer types the real subject and it is carried here — showing the
+ * code alone would hide the only part of it an agent can triage from.
+ */
+const categoryLabel = (row: QueueRow) => {
+  const label = row.category.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return row.subcategory ? `${label} · ${row.subcategory}` : label;
+};
+
 /** Open means somebody is still waiting; the rest is history. */
 const OPEN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "WAITING_FOR_INFO"];
 
@@ -113,6 +126,9 @@ function SupportQueue() {
     try {
       const response = await adminApi.supportTicket(reference);
       setTicket(response.data as TicketDetail);
+      // Fetching it is what marks it read on the server; the header badge
+      // has no way to know that happened unless it is told.
+      notifyInboxChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not open that ticket");
     }
@@ -328,7 +344,7 @@ function SupportQueue() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-slate-900">{ticket.subject}</p>
                   <p className="truncate text-[11px] text-slate-500">
-                    {ticket.reference} · {requester(ticket)}
+                    {ticket.reference} · {categoryLabel(ticket)} · {requester(ticket)}
                     {ticket.channel === "EMAIL" && ticket.requesterEmail && (
                       <> · by email from {ticket.requesterEmail}</>
                     )}
@@ -350,18 +366,36 @@ function SupportQueue() {
                 </AdminSelect>
               </header>
 
+              <section className="border-b border-slate-200 bg-white px-5 py-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <TicketFact label="Requester" value={requester(ticket)} />
+                  <TicketFact label="Category" value={categoryLabel(ticket)} verbatim />
+                  <TicketFact label="Urgency" value={ticket.priority.toLowerCase()} />
+                  <TicketFact label="Reference" value={ticket.reference} />
+                  {ticket.transactionReference && (
+                    <TicketFact label="Transaction reference" value={ticket.transactionReference} />
+                  )}
+                </div>
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">What happened</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-slate-900">{ticket.description}</p>
+                  {ticket.messages[0]?.body.trim() === ticket.description.trim() && ticket.messages[0].attachments?.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {ticket.messages[0].attachments.map((file) => (
+                        <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-700 underline">
+                          {file.fileName}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
               <ChatThread
                 messages={[
-                  // The description is the first message of the conversation,
-                  // and reads as one — it was the opening line.
-                  {
-                    id: `${ticket.reference}-opening`,
-                    text: ticket.description,
-                    at: ticket.createdAt,
-                    mine: false,
-                    author: requester(ticket),
-                  },
-                  ...ticket.messages.map((message) => ({
+                  ...ticket.messages
+                    .filter((message, index) => !(index === 0 && message.authorType === "CUSTOMER" && message.body.trim() === ticket.description.trim()))
+                    .map((message) => ({
                     id: message.id,
                     // An internal note is marked, or an admin cannot tell what
                     // the customer has actually been told.
@@ -375,6 +409,7 @@ function SupportQueue() {
                     attachments: message.attachments,
                   })),
                 ]}
+                emptyState={<p className="text-center text-sm text-slate-500">No replies yet.</p>}
               />
 
               <div className="border-t border-slate-100 bg-white p-2.5">
@@ -427,6 +462,35 @@ function SupportQueue() {
         </section>
       </div>
     </main>
+  );
+}
+
+function TicketFact({
+  label,
+  value,
+  /**
+   * Title-casing is for enum values read out of the database. Anything the
+   * customer typed keeps their capitalisation — "Bank Statement Request" is
+   * not what they wrote, and a reference or an address it would mangle.
+   */
+  verbatim = false,
+}: {
+  label: string;
+  value: string;
+  verbatim?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p
+        className={cn(
+          "mt-0.5 text-[13px] font-medium text-slate-900",
+          !verbatim && "capitalize",
+        )}
+      >
+        {value}
+      </p>
+    </div>
   );
 }
 

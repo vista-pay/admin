@@ -17,6 +17,7 @@ import { adminApi } from "@/lib/api";
 import { AdminSelect } from "@/components/ui/admin-select";
 import { Button } from "@/components/ui/button";
 import { ChatThread } from "@/components/admin/chat-thread";
+import { notifyInboxChanged } from "@/components/layout/header-inboxes";
 import { uploadAccountOfficerFile, type UploadedFile } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
@@ -166,6 +167,9 @@ function AccountOfficers() {
       setRows((current) =>
         current.map((r) => (r.communityId === row.communityId ? { ...r, unreadFromCommunity: 0 } : r)),
       );
+      // ...and tell the header, which otherwise keeps the old count until
+      // its next minute-long poll.
+      notifyInboxChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not open the conversation");
     }

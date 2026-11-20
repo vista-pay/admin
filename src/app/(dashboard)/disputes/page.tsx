@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { AdminSelect } from "@/components/ui/admin-select";
+import { notifyInboxChanged } from "@/components/layout/header-inboxes";
 
 type Person={id:string;email:string;phone:string;profile?:{firstName:string;lastName:string}|null};
 type Dispute={id:string;category:string;description:string;status:string;resolution?:string|null;assignedTo?:string|null;createdAt:string;updatedAt:string;resolvedAt?:string|null;slaHours:number;ageHours:number;breached:boolean;user:Person;transaction:{id:string;transactionReference:string;amount:string;currencyCode:string;status:string}};
@@ -16,7 +17,10 @@ const caseRef=(id:string)=>`CASE-${id.slice(0,8).toUpperCase()}`;
 
 export default function DisputesPage(){
   const [data,setData]=useState<Response|null>(null);const [selected,setSelected]=useState<Dispute|null>(null);const [type,setType]=useState("");const [assignee,setAssignee]=useState("");const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [action,setAction]=useState<"UNDER_REVIEW"|"ESCALATED"|"RESOLVED"|"CLOSED"|null>(null);const [resolution,setResolution]=useState("");const [busy,setBusy]=useState(false);const [toast,setToast]=useState("");
-  const load=useCallback(()=>apiFetch<Response>("/admin/disputes",{params:{limit:100}}).then(r=>{setData(r.data);setSelected(current=>r.data.items.find(d=>d.id===current?.id)??r.data.items[0]??null);setError("")}).catch((e:Error)=>setError(e.message)).finally(()=>setLoading(false)),[]);
+  // Loading this screen is reading the disputes — the list shows each one in
+  // full and there is no per-dispute view to mark instead — so the API clears
+  // their unread marker and the header badge is told to refetch.
+  const load=useCallback(()=>apiFetch<Response>("/admin/disputes",{params:{limit:100}}).then(r=>{setData(r.data);setSelected(current=>r.data.items.find(d=>d.id===current?.id)??r.data.items[0]??null);setError("");notifyInboxChanged()}).catch((e:Error)=>setError(e.message)).finally(()=>setLoading(false)),[]);
   useEffect(()=>{void load()},[load]);useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(""),3500);return()=>clearTimeout(t)},[toast]);
   const categories=useMemo(()=>[...new Set((data?.items??[]).map(d=>d.category))],[data]);const assignees=useMemo(()=>[...new Set((data?.items??[]).map(d=>d.assignedTo).filter((v):v is string=>Boolean(v)))],[data]);const rows=(data?.items??[]).filter(d=>(!type||d.category===type)&&(!assignee||(assignee==="UNASSIGNED"?!d.assignedTo:d.assignedTo===assignee)));
   function openAction(next:typeof action){setAction(next);setResolution(selected?.resolution??"")}

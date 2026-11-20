@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { adminApi, apiFetch } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { API_BASE } from "@/lib/constants";
 
 type Transaction = { id:string; transactionReference:string; type:string; amount:string; feeAmount:string; currencyCode:string; status:string; createdAt:string; paymentProvider?:{name:string;code:string}|null };
 type KycDocument = { id:string; type:string; fileUrl:string; status:string; verifiedAt?:string; createdAt:string };
@@ -22,8 +23,8 @@ type Detail = {
   kycRecord?:{id:string;tier:string;status:string;occupation?:string;sourceOfFunds?:string;tier1CompletedAt?:string;tier2CompletedAt?:string;tier3CompletedAt?:string;submittedForReviewAt?:string;idVerifiedAt?:string;selfieVerifiedAt?:string;rejectionReason?:string;reviewedAt?:string;documents:KycDocument[]}|null;
   wallet?:{walletNumber?:string;status?:string;accountType?:string;createdAt?:string;accounts:WalletAccount[]}|null;
   transactions:Transaction[]; beneficiaries:Beneficiary[]; favoriteRecipients:Favorite[]; devices:Device[]; fraudAlerts:Alert[]; complianceCases:ComplianceCase[]; auditLogs:Audit[];
-  ajoMemberships?:Array<{id:string;role:string;status:string;ajoGroup:{id:string;name:string;status:string;currencyCode:string}}>;
-  communityMemberships?:Array<{id:string;status:string;community:{id:string;name:string;status:string};role:{name:string}}>;
+  ajoMemberships?:Array<{id:string;role:string;status:string;ajoGroup:{id:string;name:string;status:string;currencyCode:string};agreement?:{id:string;reference:string;signedFullName:string}|null}>;
+  communityMemberships?:Array<{id:string;status:string;community:{id:string;name:string;status:string};role:{name:string};agreement?:{id:string;reference:string;signedFullName:string;countersignedAt?:string|null}|null}>;
   limits:{custom:Limit[];rules:Limit[]}; statistics:{totalTransactions:number;lifetimeTransactionVolume:string;lastTransactionAt?:string;openRiskAlerts:number};
 };
 
@@ -67,6 +68,38 @@ function ProfileTabV2({data,name}:{data:Detail;name:string}){
         <MembershipSection title="Ajo groups" subtitle="Ajo circles this user belongs to" empty="This customer is not a member of any Ajo group." rows={ajos.map(m=>({id:m.id,name:m.ajoGroup.name,affiliation:m.role,status:m.status,detail:m.ajoGroup.status,href:"/ajo-groups"}))}/>
         <MembershipSection title="Communities" subtitle="Community memberships and roles" empty="This customer is not a member of any community." rows={communities.map(m=>({id:m.id,name:m.community.name,affiliation:m.role.name,status:m.status,detail:m.community.status,href:`/communities/${m.community.id}`}))}/>
       </div>
+      {communities.some((membership) => membership.agreement) ? (
+        <Card title="Signed membership agreements">
+          <div className="divide-y divide-slate-100">
+            {communities.filter((membership) => membership.agreement).map((membership) => (
+              <div key={membership.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-slate-900">{membership.community.name}</p>
+                  <p className="text-xs text-slate-500">{membership.agreement!.reference} · signed by {membership.agreement!.signedFullName}</p>
+                </div>
+                <a
+                  href={`${API_BASE}/admin/users/${data.id}/membership-agreements/${membership.agreement!.id}/pdf`}
+                  className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+                >
+                  Agreement PDF
+                </a>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+      {ajos.some((membership) => membership.agreement) ? (
+        <Card title="Signed Ajo participation agreements">
+          <div className="divide-y divide-slate-100">
+            {ajos.filter((membership) => membership.agreement).map((membership) => (
+              <div key={membership.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                <div className="min-w-0"><p className="truncate text-sm font-bold">{membership.ajoGroup.name}</p><p className="text-xs text-slate-500">{membership.agreement!.reference}</p></div>
+                <a href={`${API_BASE}/admin/users/${data.id}/ajo-agreements/${membership.agreement!.id}/pdf`} className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100">Agreement PDF</a>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
       <Card title="Recent activity"><div className="space-y-3">{data.transactions.slice(0,3).map(t=><Link key={t.id} href={`/transactions/${t.id}`} className="flex items-center gap-3 rounded-xl p-2 transition hover:bg-slate-50"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">₦</span><span className="min-w-0 flex-1"><b className="block truncate text-xs">{t.type.replaceAll("_"," ")} · {formatCurrency(t.amount,t.currencyCode)}</b><small className="text-[10px] text-slate-500">{formatDate(t.createdAt)} · {t.transactionReference}</small></span><Status value={t.status}/></Link>)}{!data.transactions.length&&<Empty compact title="No recent activity" text="No transactions have been recorded for this customer."/>}</div></Card>
     </div>
   </div>;

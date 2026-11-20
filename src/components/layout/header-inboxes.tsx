@@ -21,6 +21,20 @@ import { cn } from "@/lib/utils";
 /** Slow enough to be free, often enough that nobody refreshes to check. */
 const POLL_MS = 60_000;
 
+/**
+ * Fired by any screen that has just read something the badges count.
+ *
+ * Without it the counts only moved on the next poll, so an agent who opened a
+ * ticket watched the badge keep claiming it was waiting for up to a minute —
+ * long enough to conclude the badge is broken and stop believing it.
+ */
+export const INBOX_CHANGED_EVENT = "rendi:inbox-changed";
+
+/** Call after opening or answering anything the header counts. */
+export function notifyInboxChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(INBOX_CHANGED_EVENT));
+}
+
 export function HeaderInboxes() {
   const [support, setSupport] = useState<SupportInbox | null>(null);
   const [officer, setOfficer] = useState<AccountOfficerInbox | null>(null);
@@ -43,7 +57,24 @@ export function HeaderInboxes() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     const timer = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(timer);
+
+    // Three ways the counts can go stale between polls: a screen read
+    // something, the operator came back to the tab, or they were away long
+    // enough for the interval to have been throttled.
+    const onChanged = () => void load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener(INBOX_CHANGED_EVENT, onChanged);
+    window.addEventListener("focus", onChanged);
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(INBOX_CHANGED_EVENT, onChanged);
+      window.removeEventListener("focus", onChanged);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
   // Click-away and Escape, so an open panel never traps the page.
@@ -85,7 +116,9 @@ export function HeaderInboxes() {
           title="Waiting on support"
           subtitle={
             support
-              ? `${support.openTickets} ticket${support.openTickets === 1 ? "" : "s"} · ${support.openDisputes} dispute${support.openDisputes === 1 ? "" : "s"}`
+              ? support.total === 0
+                ? "Nothing new — everything here has been read"
+                : `${support.unreadTickets} unread ticket${support.unreadTickets === 1 ? "" : "s"} · ${support.unreadDisputes} unread dispute${support.unreadDisputes === 1 ? "" : "s"}`
               : "Loading…"
           }
           seeAll={{ href: "/support", label: "Open the support queue" }}
@@ -96,9 +129,16 @@ export function HeaderInboxes() {
             title: item.title,
             meta: `${item.kind === "DISPUTE" ? "Dispute" : "Ticket"} · ${item.from}`,
             at: item.at,
-            flag: item.priority !== "NORMAL" ? item.priority : null,
+            // Priority is the louder fact when a ticket is both urgent and
+            // unread; "New" marks the rest of what the badge counted.
+            flag: item.priority !== "NORMAL" ? item.priority : item.unread ? "New" : null,
           }))}
-          onNavigate={() => setOpen(null)}
+          onNavigate={() => {
+            setOpen(null);
+            // Opening a row reads it; refresh once the page has had a moment
+            // to fetch, so the badge reflects it without waiting for a poll.
+            window.setTimeout(() => void load(), 1_200);
+          }}
         />
       )}
 
@@ -120,7 +160,10 @@ export function HeaderInboxes() {
             at: item.at,
             flag: item.unread > 1 ? `${item.unread} unread` : null,
           }))}
-          onNavigate={() => setOpen(null)}
+          onNavigate={() => {
+            setOpen(null);
+            window.setTimeout(() => void load(), 1_200);
+          }}
         />
       )}
     </div>

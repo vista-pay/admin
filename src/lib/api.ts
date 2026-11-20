@@ -210,13 +210,20 @@ export type InboxEntry = {
   status: string;
   priority: string;
   at: string;
+  /** Nobody on the desk has opened it yet — what the badge is counting. */
+  unread?: boolean;
   /** Where clicking it goes — built by the API so the link cannot drift. */
   href: string;
 };
 
+/**
+ * The badge counts what the desk has not read, not what is open. An open
+ * ticket an agent has already picked up is work in progress, not a
+ * notification, and counting it was what kept the red dot lit permanently.
+ */
 export type SupportInbox = {
-  openTickets: number;
-  openDisputes: number;
+  unreadTickets: number;
+  unreadDisputes: number;
   total: number;
   items: InboxEntry[];
 };
