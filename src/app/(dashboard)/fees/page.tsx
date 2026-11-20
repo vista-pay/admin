@@ -325,6 +325,40 @@ export default function FeesPage() {
     }
   }
 
+  /**
+   * Removing a merchant rate is not pausing it. Pausing makes the transaction
+   * type free for merchants; removing returns them to the Everyone rate.
+   */
+  async function removeMerchantRate(rule: Rule) {
+    const ordinary = rules.find(
+      (other) =>
+        other.transactionType === rule.transactionType &&
+        other.currencyCode === rule.currencyCode &&
+        other.audience === "EVERYONE",
+    );
+    const after = ordinary
+      ? `Merchants will pay the Everyone rate: ${ruleText(ordinary)}.`
+      : "There is no Everyone rate on this transaction type, so it becomes free for merchants.";
+    if (!window.confirm(`Remove the merchant rate on ${pretty(rule.transactionType)}?\n\n${after}`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiFetch(`/admin/fees/${rule.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          reason: `${pretty(rule.transactionType)} merchant rate removed from the admin console`,
+        }),
+      });
+      setToast(`Merchants now pay the Everyone rate on ${pretty(rule.transactionType).toLowerCase()}.`);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not remove that rate");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-[1400px] flex-1 p-4 sm:p-6 lg:p-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -418,6 +452,16 @@ export default function FeesPage() {
                   >
                     {rule.isActive ? "Pause" : "Resume"}
                   </button>
+                  {rule.audience === "MERCHANT" && (
+                    <button
+                      disabled={busy}
+                      onClick={() => void removeMerchantRate(rule)}
+                      title="Merchants go back to paying the Everyone rate"
+                      className="ml-3 font-bold text-slate-400 hover:text-red-600 hover:underline disabled:opacity-40"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -472,6 +516,15 @@ export default function FeesPage() {
                 >
                   {rule.isActive ? "Pause" : "Resume"}
                 </button>
+                {rule.audience === "MERCHANT" && (
+                  <button
+                    disabled={busy}
+                    onClick={() => void removeMerchantRate(rule)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                )}
                 <button
                   onClick={() => openEdit(rule)}
                   className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
@@ -501,8 +554,9 @@ export default function FeesPage() {
           <h2 className="font-black text-slate-950">How a fee is worked out</h2>
           <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
             <li>
-              <strong className="text-slate-900">1.</strong> The rule matching the transaction type
-              and currency is found. No match means no fee.
+              <strong className="text-slate-900">1.</strong> The rule matching the transaction
+              type and currency is found — the merchant rate for a business or community account
+              where one exists, otherwise the Everyone rate. No match means no fee.
             </li>
             <li>
               <strong className="text-slate-900">2.</strong> Flat charges the fixed amount;
