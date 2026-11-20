@@ -38,15 +38,31 @@ type Flow = {
     customerFloat: string;
     heldFloat: string;
   };
-  destination: {
-    configured: boolean;
-    accountNumber: string | null;
-    bankCode: string | null;
-    bankName: string | null;
-    accountName: string | null;
+  destinations: {
+    items: Destination[];
+    /** Only present while nothing is registered — the env-var fallback. */
+    fromConfiguration: {
+      label: string;
+      accountNumber: string;
+      bankCode: string;
+      bankName: string | null;
+      accountName: string | null;
+    } | null;
   };
   series: Array<{ date: string; amount: string }>;
   bySource: Array<{ source: string; amount: string; count: number }>;
+};
+
+type Destination = {
+  id: string;
+  label: string;
+  bankCode: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  currencyCode: string;
+  isDefault: boolean;
+  isActive: boolean;
 };
 
 type Sweep = {
@@ -88,8 +104,20 @@ export default function MoneyFlowPage() {
   const [sweeps, setSweeps] = useState<Sweep[]>([]);
   const [error, setError] = useState("");
   const [showSweep, setShowSweep] = useState(false);
-  /** Bumped after a sweep, to refetch without threading a callback through. */
+  const [showDestination, setShowDestination] = useState(false);
+  /** Bumped after a change, to refetch without threading a callback through. */
   const [reloadKey, setReloadKey] = useState(0);
+
+  const reload = () => setReloadKey((key) => key + 1);
+
+  async function retire(id: string) {
+    try {
+      await adminApi.retirePayoutDestination(id);
+      reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not retire that account.");
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -118,6 +146,8 @@ export default function MoneyFlowPage() {
   }
 
   const f = flow!;
+  const active = f.destinations.items.filter((item) => item.isActive);
+  const canSweep = active.length > 0 || Boolean(f.destinations.fromConfiguration);
   const available = Number(f.totals.available);
   const series = f.series.map((point) => ({ date: point.date, amount: Number(point.amount) }));
   const sourceTotal = f.bySource.reduce((sum, row) => sum + Number(row.amount), 0);
@@ -144,17 +174,17 @@ export default function MoneyFlowPage() {
             </select>
             <button
               onClick={() => setShowSweep(true)}
-              disabled={!(available > 0) || !f.destination.configured}
+              disabled={!(available > 0) || !canSweep}
               className="h-10 rounded-lg bg-[#1F3770] px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
               title={
-                !f.destination.configured
-                  ? "No operating account is configured"
+                !canSweep
+                  ? "No payout destination is registered"
                   : available > 0
-                    ? "Sweep earnings to the operating account"
-                    : "Nothing available to sweep"
+                    ? "Withdraw earnings to a registered account"
+                    : "Nothing available to withdraw"
               }
             >
-              Sweep earnings
+              Withdraw earnings
             </button>
           </div>
         </section>
@@ -190,12 +220,23 @@ export default function MoneyFlowPage() {
           />
         </section>
 
-        {!f.destination.configured && (
+        {!canSweep && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
-            <b>No operating account is configured.</b> Set{" "}
-            <code className="rounded bg-amber-100 px-1">PLATFORM_OPERATING_ACCOUNT</code> and{" "}
-            <code className="rounded bg-amber-100 px-1">PLATFORM_OPERATING_BANK_CODE</code> on the
-            API before earnings can be swept. Until then the figures above are reporting only.
+            <b>No payout destination is registered.</b> Add the bank account Rendi&rsquo;s earnings
+            should be paid into — below — and a second administrator approves it. Until then the
+            figures above are reporting only.
+          </div>
+        )}
+
+        {f.destinations.fromConfiguration && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs text-[#475569]">
+            Using the account from environment configuration —{" "}
+            <b>
+              {f.destinations.fromConfiguration.bankName ?? f.destinations.fromConfiguration.bankCode}{" "}
+              {f.destinations.fromConfiguration.accountNumber}
+            </b>
+            . Register it properly below so the destination carries an approval trail instead of
+            depending on a redeploy to change.
           </div>
         )}
 
@@ -286,20 +327,72 @@ export default function MoneyFlowPage() {
           <article className="rounded-xl border border-[#E3E8F0] bg-white p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-bold">Sweeps</h2>
+                <h2 className="text-sm font-bold">Withdrawals</h2>
                 <p className="mt-0.5 text-[11px] text-[#64748B]">
-                  {f.destination.configured
-                    ? `To ${f.destination.bankName ?? f.destination.bankCode} ${f.destination.accountNumber}`
-                    : "No destination configured"}
+                  {active.length > 0
+                    ? `${active.length} registered account${active.length === 1 ? "" : "s"}`
+                    : "No registered account"}
                 </p>
               </div>
               <Link href="/approvals" className="text-[11px] font-semibold text-[#2563EB] hover:underline">
                 Approvals →
               </Link>
             </div>
+            {/* The accounts money may go to. Listed here rather than on a
+                settings page because "where can this money go" is the same
+                question as "where did it go". */}
+            <div className="mt-4 space-y-2">
+              {f.destinations.items.map((destination) => (
+                <div
+                  key={destination.id}
+                  className={`rounded-lg border p-2.5 ${destination.isActive ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-60"}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-xs font-bold text-[#0F172A]">
+                        {destination.label}
+                        {destination.isDefault && destination.isActive && (
+                          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">
+                            DEFAULT
+                          </span>
+                        )}
+                        {!destination.isActive && (
+                          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+                            RETIRED
+                          </span>
+                        )}
+                      </p>
+                      <p className="truncate text-[10px] text-[#64748B]">
+                        {destination.bankName} · {destination.accountNumber} ·{" "}
+                        {destination.accountName}
+                      </p>
+                    </div>
+                    {destination.isActive && (
+                      <button
+                        onClick={() => void retire(destination.id)}
+                        className="shrink-0 text-[10px] font-semibold text-slate-400 hover:text-red-600"
+                        title="Retire this account — past withdrawals keep naming it"
+                      >
+                        Retire
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <button
+                onClick={() => setShowDestination(true)}
+                className="h-9 w-full rounded-lg border border-dashed border-slate-300 text-[11px] font-semibold text-[#475569] hover:border-slate-400 hover:bg-slate-50"
+              >
+                + Register a bank account
+              </button>
+            </div>
+
+            <h3 className="mt-5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              History
+            </h3>
             {sweeps.length === 0 ? (
-              <p className="mt-6 text-xs text-slate-500">
-                No sweeps yet. Earnings stay at the provider until one is approved.
+              <p className="mt-2 text-xs text-slate-500">
+                No withdrawals yet. Earnings stay at the provider until one is approved.
               </p>
             ) : (
               <div className="mt-4 space-y-2">
@@ -332,11 +425,23 @@ export default function MoneyFlowPage() {
         <SweepDialog
           available={f.totals.available}
           currency={f.currency}
-          destination={f.destination}
+          destinations={active}
+          fallback={f.destinations.fromConfiguration}
           onClose={() => setShowSweep(false)}
           onDone={() => {
             setShowSweep(false);
-            setReloadKey((key) => key + 1);
+            reload();
+          }}
+        />
+      )}
+
+      {showDestination && (
+        <DestinationDialog
+          currency={f.currency}
+          onClose={() => setShowDestination(false)}
+          onDone={() => {
+            setShowDestination(false);
+            reload();
           }}
         />
       )}
@@ -400,23 +505,29 @@ function StatusPill({ status }: { status: string }) {
 function SweepDialog({
   available,
   currency,
-  destination,
+  destinations,
+  fallback,
   onClose,
   onDone,
 }: {
   available: string;
   currency: string;
-  destination: Flow["destination"];
+  destinations: Destination[];
+  fallback: Flow["destinations"]["fromConfiguration"];
   onClose: () => void;
   onDone: () => void;
 }) {
   const [amount, setAmount] = useState(available);
   const [reason, setReason] = useState("");
+  const [destinationId, setDestinationId] = useState(
+    destinations.find((item) => item.isDefault)?.id ?? destinations[0]?.id ?? "",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [raised, setRaised] = useState<string | null>(null);
 
   const numeric = Number(amount);
+  const chosen = destinations.find((item) => item.id === destinationId);
   const valid = numeric > 0 && numeric <= Number(available) && reason.trim().length >= 10;
 
   async function submit() {
@@ -427,6 +538,8 @@ function SweepDialog({
         amount: String(numeric),
         currencyCode: currency,
         reason: reason.trim(),
+        // Omitted when falling back to configuration — the API resolves it.
+        ...(destinationId ? { destinationId } : {}),
       });
       onDone();
     } catch (cause) {
@@ -463,11 +576,37 @@ function SweepDialog({
           </>
         ) : (
           <>
-            <h2 className="text-base font-bold text-[#0F172A]">Sweep earnings</h2>
+            <h2 className="text-base font-bold text-[#0F172A]">Withdraw earnings</h2>
             <p className="mt-1 text-[11px] text-[#64748B]">
-              To {destination.accountName ?? "the operating account"} ·{" "}
-              {destination.bankName ?? destination.bankCode} {destination.accountNumber}
+              Paid by bank transfer out of the provider settlement account
             </p>
+
+            {destinations.length > 0 ? (
+              <label className="mt-4 block text-[11px] font-semibold text-[#475569]">
+                To account
+                <select
+                  value={destinationId}
+                  onChange={(event) => setDestinationId(event.target.value)}
+                  className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-xs text-[#0F172A]"
+                >
+                  {destinations.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label} — {item.bankName} {item.accountNumber}
+                    </option>
+                  ))}
+                </select>
+                {chosen && (
+                  <span className="mt-1 block text-[10px] font-normal text-[#64748B]">
+                    {chosen.accountName}
+                  </span>
+                )}
+              </label>
+            ) : (
+              <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-[#475569]">
+                To {fallback?.bankName ?? fallback?.bankCode} {fallback?.accountNumber} — from
+                environment configuration.
+              </p>
+            )}
 
             <label className="mt-4 block text-[11px] font-semibold text-[#475569]">
               Amount ({currency})
@@ -512,7 +651,174 @@ function SweepDialog({
                 disabled={!valid || busy}
                 className="h-10 flex-1 rounded-lg bg-[#1F3770] text-xs font-bold text-white disabled:bg-slate-300"
               >
-                {busy ? "Requesting…" : "Request sweep"}
+                {busy ? "Requesting…" : "Request withdrawal"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Registering an account earnings may be paid to.
+ *
+ * No account-name field on purpose: the name comes from the bank when the
+ * API resolves the number, so a convincing label cannot sit over the wrong
+ * account. Like the withdrawal itself, the first submit is expected to 428 —
+ * a destination authorises every future withdrawal, not just one.
+ */
+function DestinationDialog({
+  currency,
+  onClose,
+  onDone,
+}: {
+  currency: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [bankCode, setBankCode] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [raised, setRaised] = useState<string | null>(null);
+
+  const valid =
+    label.trim().length >= 3 &&
+    /^\d{10}$/.test(accountNumber) &&
+    /^\d{3,6}$/.test(bankCode) &&
+    reason.trim().length >= 10;
+
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      await adminApi.addPayoutDestination({
+        label: label.trim(),
+        accountNumber,
+        bankCode,
+        ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
+        currencyCode: currency,
+        reason: reason.trim(),
+      });
+      onDone();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === "ADMIN_APPROVAL_REQUIRED") {
+        setRaised(cause.message);
+      } else {
+        setError(cause instanceof Error ? cause.message : "That account could not be registered.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-[440px] rounded-2xl bg-white p-5 shadow-xl">
+        {raised ? (
+          <>
+            <h2 className="text-base font-bold text-[#0F172A]">Waiting on a second approval</h2>
+            <p className="mt-2 text-xs leading-5 text-[#475569]">{raised}</p>
+            <p className="mt-3 text-xs leading-5 text-[#475569]">
+              The account is not registered yet, and nothing can be paid to it until another
+              administrator approves it in{" "}
+              <Link href="/approvals" className="font-semibold text-[#2563EB] hover:underline">
+                Approvals
+              </Link>
+              .
+            </p>
+            <button
+              onClick={onDone}
+              className="mt-5 h-10 w-full rounded-lg bg-[#1F3770] text-xs font-bold text-white"
+            >
+              Done
+            </button>
+          </>
+        ) : (
+          <>
+            <h2 className="text-base font-bold text-[#0F172A]">Register a bank account</h2>
+            <p className="mt-1 text-[11px] text-[#64748B]">
+              The account name is taken from the bank, not typed here
+            </p>
+
+            <label className="mt-4 block text-[11px] font-semibold text-[#475569]">
+              Label
+              <input
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder="Operations account"
+                className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
+              />
+            </label>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block text-[11px] font-semibold text-[#475569]">
+                Account number
+                <input
+                  value={accountNumber}
+                  onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, "").slice(0, 10))}
+                  inputMode="numeric"
+                  placeholder="0045434120"
+                  className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
+                />
+              </label>
+              <label className="block text-[11px] font-semibold text-[#475569]">
+                NIP bank code
+                <input
+                  value={bankCode}
+                  onChange={(event) => setBankCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  placeholder="000013"
+                  className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
+                />
+              </label>
+            </div>
+
+            <label className="mt-3 block text-[11px] font-semibold text-[#475569]">
+              Bank name <span className="font-normal text-slate-400">(optional)</span>
+              <input
+                value={bankName}
+                onChange={(event) => setBankName(event.target.value)}
+                placeholder="GTBANK PLC"
+                className="mt-1 h-10 w-full rounded-lg border border-[#E3E8F0] px-3 text-sm text-[#0F172A]"
+              />
+            </label>
+
+            <label className="mt-3 block text-[11px] font-semibold text-[#475569]">
+              Reason for the approver
+              <textarea
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                rows={3}
+                placeholder="Whose account this is and why earnings should go there."
+                className="mt-1 w-full rounded-lg border border-[#E3E8F0] p-3 text-xs text-[#0F172A]"
+              />
+            </label>
+
+            {error && (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {error}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={onClose}
+                className="h-10 flex-1 rounded-lg border border-[#E3E8F0] text-xs font-bold text-[#475569]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submit}
+                disabled={!valid || busy}
+                className="h-10 flex-1 rounded-lg bg-[#1F3770] text-xs font-bold text-white disabled:bg-slate-300"
+              >
+                {busy ? "Checking with the bank…" : "Register account"}
               </button>
             </div>
           </>

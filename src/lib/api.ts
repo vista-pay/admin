@@ -714,11 +714,34 @@ export const adminApi = {
    * expected to read `ApiError.code` and show the approval it raised rather
    * than treating it as a failure.
    */
-  requestRevenueSweep: (body: { amount: string; currencyCode: string; reason: string }) =>
+  requestRevenueSweep: (body: {
+    amount: string;
+    currencyCode: string;
+    reason: string;
+    destinationId?: string;
+  }) =>
     apiFetch<unknown>("/admin/platform-revenue/sweeps", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  payoutDestinations: (currency = "NGN") =>
+    apiFetch<unknown>("/admin/platform-revenue/destinations", { params: { currency } }),
+  /** Also 428s on the first call — registering a destination is gated too. */
+  addPayoutDestination: (body: {
+    label: string;
+    accountNumber: string;
+    bankCode: string;
+    bankName?: string;
+    currencyCode?: string;
+    isDefault?: boolean;
+    reason: string;
+  }) =>
+    apiFetch<unknown>("/admin/platform-revenue/destinations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  retirePayoutDestination: (id: string) =>
+    apiFetch<unknown>(`/admin/platform-revenue/destinations/${id}`, { method: "DELETE" }),
   listUsers: (params: { page?: number; limit?: number; search?: string }) =>
     apiFetch<unknown>("/admin/users", { params: params as Record<string, string | number | boolean | undefined> }),
   getUser: (id: string) => apiFetch<unknown>(`/admin/users/${id}`),
@@ -1025,6 +1048,17 @@ export const adminApi = {
    * upgrade debits the community wallet now, a downgrade waits for the paid
    * period unless `immediate`. The reason lands in both audit trails.
    */
+  /**
+   * Ends a trial that is already running. Taking `trialDays` off the plan
+   * only affects the next community to join it — the dates are stamped on
+   * the subscription when it starts.
+   */
+  endCommunityTrial: (communityId: string) =>
+    apiFetch<unknown>(`/admin/communities/${communityId}/subscription/end-trial`, {
+      method: "POST",
+      body: "{}",
+    }),
+
   changeCommunityPlan: (communityId: string, body: { planId: string; immediate?: boolean; reason: string }) =>
     apiFetch<unknown>(`/admin/communities/${communityId}/subscription/change-plan`, {
       method: "POST",
